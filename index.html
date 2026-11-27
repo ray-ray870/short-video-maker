@@ -624,6 +624,17 @@ function seekTo(v, t) {
     try { v.currentTime = t; } catch (e) { finish(false, e); }
   });
 }
+async function playWithRetry(v) {
+  let lastErr = null;
+  for (let i = 0; i < 3; i++) {
+    try { await v.play(); return; }
+    catch (e) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 350));
+    }
+  }
+  throw lastErr || new Error("再生を始められませんでした");
+}
 function ensureAudioGraph(v) {
   if (!state.audioCtx) {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -690,16 +701,17 @@ els.exportBtn.addEventListener("click", async () => {
     };
 
     await seekTo(v, ranges[0].start);
-    await v.play();
+    await playWithRetry(v);
     rec.start(200);
     for (let i = 0; i < ranges.length; i++) {
       curRange = ranges[i];
       if (i > 0) {
         await seekTo(v, curRange.start);
-        await v.play();
+        await playWithRetry(v);
       }
       await new Promise((res) => {
         const tick = () => {
+          if (v.paused && !v.ended) { v.play().catch(() => {}); }
           drawFrame();
           if (v.currentTime >= curRange.end || v.ended) { res(); return; }
           requestAnimationFrame(tick);
@@ -728,7 +740,7 @@ els.exportBtn.addEventListener("click", async () => {
     setStatus(els.exportStatus, "書き出しでエラーが起きました：" + (e && e.message ? e.message : e), "warn");
   } finally {
     if (restoreMute) els.srcVideo.muted = true;
-    try { els.srcVideo.pause(); } catch (e) {}
+    try { v.pause(); } catch (e) {}
     updateActionButtons();
   }
 });
