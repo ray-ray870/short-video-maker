@@ -179,17 +179,12 @@
         <button id="transcribeBtn" disabled>🎙 文字起こしする</button>
         <progress id="asrProgress" max="100" value="0"></progress>
         <p class="status" id="asrStatus">範囲を追加すると押せるようになります。初回は音声認識モデルのダウンロードで数分かかることがあります。</p>
+        <p class="hint">文字起こしの結果は、そのままここでタップして直せます（誤字の修正用）。直した内容が書き出しに反映されます。</p>
         <div class="seg-list" id="segList"></div>
       </section>
 
       <section class="card">
-        <h2><span class="step">4</span>字幕を直す</h2>
-        <p class="hint">タップすると、その場で文字を直せます（誤字の修正用）。直した内容が書き出しに反映されます。</p>
-        <div class="seg-list" id="editList"></div>
-      </section>
-
-      <section class="card">
-        <h2><span class="step">5</span>ショート動画を作る</h2>
+        <h2><span class="step">4</span>ショート動画を作る</h2>
         <button id="exportBtn" disabled>🎥 ショート動画を作る</button>
         <p class="status" id="exportStatus">選んだ範囲をつなげて1本の縦型動画にします。再生しながら録画する方式なので、出来上がりの長さと同じくらい時間がかかります。録画中は画面を閉じないでください。</p>
       </section>
@@ -200,7 +195,7 @@
           <li>処理は<strong>この端末の中だけ</strong>で行われます。動画が外部のサーバーに送られることはありません。</li>
           <li>初回の文字起こしは、音声認識モデル（精度優先は約250MB／速さ優先は約70MB）のダウンロードで数分かかることがあります。Wi-Fi推奨です。</li>
           <li>文字起こしは選んだ範囲だけなので、長い動画でも大丈夫です。</li>
-          <li>字幕の自動文字起こしには誤字が出ることがあります。ステップ4で直してから書き出してください。</li>
+          <li>字幕の自動文字起こしには誤字が出ることがあります。文字起こしの結果のところで直してから書き出してください。</li>
           <li>範囲と範囲のつなぎ目では、一瞬だけ映像が止まって見えることがあります。</li>
           <li>書き出し形式は端末・ブラウザによって変わります（mp4 または webm）。</li>
         </ul>
@@ -220,7 +215,7 @@ const els = {
   rangeStart: $("rangeStart"), rangeEnd: $("rangeEnd"), addRangeBtn: $("addRangeBtn"),
   rangeStatus: $("rangeStatus"), rangeList: $("rangeList"), rangeTotal: $("rangeTotal"),
   transcribeBtn: $("transcribeBtn"), asrProgress: $("asrProgress"), asrStatus: $("asrStatus"), modelSelect: $("modelSelect"),
-  segList: $("segList"), editList: $("editList"),
+  segList: $("segList"),
   exportBtn: $("exportBtn"), exportStatus: $("exportStatus"),
   canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
@@ -280,12 +275,12 @@ els.fileInput.addEventListener("change", () => {
   els.fileName.textContent = "選択中：" + f.name;
   els.addRangeBtn.disabled = false;
   els.segList.innerHTML = "";
-  els.editList.innerHTML = "";
+
   els.resultCard.style.display = "none";
   setStatus(els.rangeStatus, "プレビューを再生して、範囲を指定してください。");
   setStatus(els.asrStatus, "音声を準備しています…");
   renderRanges();
-  renderEditList();
+  renderSegList();
   updateActionButtons();
   // ファイルの読み取り権限が切れる前に、その場で音声を読み込んでおく（Android対策）
   state.audioData = null;
@@ -481,7 +476,7 @@ els.transcribeBtn.addEventListener("click", async () => {
       setStatus(els.asrStatus, "文字起こし完了：" + state.segments.length + " 件のセリフが見つかりました。範囲の端は字幕の切れ目に合わせました。", "ok");
     }
     renderSegList();
-    renderEditList();
+    renderSegList();
   } catch (e) {
     console.error(e);
     setStatus(els.asrStatus, "文字起こしでエラーが起きました：" + (e && e.message ? e.message : e), "warn");
@@ -503,25 +498,6 @@ function snapRangesToSegments() {
 
 function renderSegList() {
   els.segList.innerHTML = "";
-  state.segments.forEach((s) => {
-    const div = document.createElement("div");
-    div.className = "seg";
-    const t = document.createElement("div");
-    t.className = "time"; t.textContent = "範囲" + (s.range + 1) + "　" + fmt(s.start) + " 〜 " + fmt(s.end);
-    const tx = document.createElement("div");
-    tx.className = "text"; tx.textContent = s.text;
-    div.appendChild(t); div.appendChild(tx);
-    els.segList.appendChild(div);
-  });
-}
-
-/* ---------- 4. 字幕編集 ---------- */
-function renderEditList() {
-  els.editList.innerHTML = "";
-  if (!state.segments.length) {
-    els.editList.innerHTML = '<p class="hint">文字起こしをすると、ここに字幕が出ます。</p>';
-    return;
-  }
   state.segments.forEach((s, idx) => {
     const div = document.createElement("div");
     div.className = "seg in-range";
@@ -531,7 +507,7 @@ function renderEditList() {
     ta.value = s.text; ta.rows = 2; ta.setAttribute("aria-label", "字幕 " + (idx + 1));
     ta.addEventListener("input", () => { state.segments[idx].text = ta.value; });
     div.appendChild(t); div.appendChild(ta);
-    els.editList.appendChild(div);
+    els.segList.appendChild(div);
   });
 }
 
@@ -702,7 +678,7 @@ els.exportBtn.addEventListener("click", async () => {
 });
 
 renderRanges();
-renderEditList();
+renderSegList();
 </script>
 </body>
 </html>
