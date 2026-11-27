@@ -256,7 +256,17 @@ els.fileInput.addEventListener("change", () => {
   els.segList.innerHTML = "";
   els.editList.innerHTML = "";
   els.resultCard.style.display = "none";
-  setStatus(els.asrStatus, "「文字起こしする」を押してください。初回はモデルのダウンロードで数分かかることがあります。");
+  setStatus(els.asrStatus, "音声を準備しています…");
+  // ファイルの読み取り権限が切れる前に、その場で音声を読み込んでおく（Android対策）
+  state.audioData = null;
+  state.audioPromise = decodeAudioTo16kMono(f).then((a) => {
+    state.audioData = a;
+    setStatus(els.asrStatus, "「文字起こしする」を押してください。初回はモデルのダウンロードで数分かかることがあります。");
+    return a;
+  });
+  state.audioPromise.catch(() => {
+    setStatus(els.asrStatus, "音声の読み込みに失敗しました。もう一度、動画を選び直してみてください。", "warn");
+  });
 });
 
 /* ---------- 2. 文字起こし ---------- */
@@ -310,7 +320,11 @@ els.transcribeBtn.addEventListener("click", async () => {
       });
     }
     setStatus(els.asrStatus, "音声を読み込んでいます…");
-    const audio = await decodeAudioTo16kMono(state.file);
+    let audio = state.audioData;
+    if (!audio) {
+      try { audio = await state.audioPromise; }
+      catch (e) { audio = await decodeAudioTo16kMono(state.file); }
+    }
     setStatus(els.asrStatus, "文字起こし中です…（動画の長さによっては時間がかかります）");
     const out = await state.transcriber(audio, {
       language: "japanese", task: "transcribe",
