@@ -120,7 +120,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v35）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v36）</p>
 </header>
 
 <div class="wrap">
@@ -647,7 +647,7 @@ els.transcribeBtn.addEventListener("click", async () => {
         if (!text) return;
         const s0 = (c.timestamp && typeof c.timestamp[0] === "number") ? c.timestamp[0] : 0;
         const s1 = (c.timestamp && typeof c.timestamp[1] === "number") ? c.timestamp[1] : s0;
-        allSegments.push({ start: r.start + s0, end: r.start + s1, text, range: i });
+        splitLongSegment({ start: r.start + s0, end: r.start + s1, text, range: i }).forEach((sg) => allSegments.push(sg));
       });
       doneSec += (r.end - r.start);
     }
@@ -681,6 +681,50 @@ function snapRangesToSegments() {
   state.ranges.sort((a, b) => a.start - b.start);
 }
 
+const SUB_MAX = 20;
+function splitTextForSubtitle(text) {
+  if (text.length <= SUB_MAX) return [text];
+  let atoms = [];
+  if (typeof Intl !== "undefined" && Intl.Segmenter) {
+    try {
+      const seg = new Intl.Segmenter("ja", { granularity: "word" });
+      for (const s of seg.segment(text)) {
+        const w = s.segment;
+        if (!w) continue;
+        const attach = SKIP_TOKENS.has(w) || /^[、。，．・！？!?」]+$/.test(w) || /^(る|た|ない|たい|ます|ませ|ず|ぬ|う|よう|て|たり|つつ|ながら|られ|れる|させ|せる|い|く|かっ|さ|み|げ|しく|いる|いた|います|いました)$/.test(w);
+        if (attach && atoms.length) atoms[atoms.length - 1] += w;
+        else atoms.push(w);
+      }
+    } catch (e) { atoms = []; }
+  }
+  if (!atoms.length) atoms = text.split(/(?<=、|。)/).filter((c) => c.length > 0);
+  const flat = [];
+  atoms.forEach((a) => {
+    if (a.length <= SUB_MAX) flat.push(a);
+    else for (let i = 0; i < a.length; i += SUB_MAX) flat.push(a.slice(i, i + SUB_MAX));
+  });
+  const lines = [];
+  let cur = "";
+  flat.forEach((a) => {
+    if (cur && (cur + a).length > SUB_MAX) { lines.push(cur); cur = a; }
+    else cur += a;
+  });
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [text];
+}
+function splitLongSegment(sg) {
+  const parts = splitTextForSubtitle(sg.text);
+  if (parts.length <= 1) return [sg];
+  const total = parts.reduce((a, p) => a + p.length, 0);
+  const dur = Math.max(0, sg.end - sg.start);
+  let acc = 0;
+  return parts.map((p, i) => {
+    const a = sg.start + dur * (acc / total);
+    acc += p.length;
+    const b = i === parts.length - 1 ? sg.end : sg.start + dur * (acc / total);
+    return { start: a, end: b, text: p, range: sg.range };
+  });
+}
 function renderSegList() {
   els.segList.innerHTML = "";
   state.segments.forEach((s, idx) => {
