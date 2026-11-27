@@ -110,7 +110,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v11）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v12）</p>
 </header>
 
 <div class="wrap">
@@ -733,7 +733,7 @@ els.exportBtn.addEventListener("click", async () => {
   if (!state.url || !state.ranges.length) { setStatus(els.exportStatus, "先に動画と切り抜き範囲を指定してください。", "warn"); return; }
   const ranges = state.ranges.map((r) => ({ start: r.start, end: r.end })).sort((a, b) => a.start - b.start);
   const totalDur = ranges.reduce((a, r) => a + (r.end - r.start), 0);
-  let v = els.exportVideo;
+  let v = els.srcVideo;
   let restoreMute = false;
   const canvas = els.outCanvas, ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
@@ -744,14 +744,10 @@ els.exportBtn.addEventListener("click", async () => {
   els.exportProgress.value = 0;
   setStatus(els.exportStatus, "書き出し中… 0%");
   try {
-    // 書き出し用の隠し動画が読み込めない端末では、プレビュー側の動画で代用する（Android対策）
-    const hiddenReady = await probeReady(els.exportVideo, 4000);
-    if (!hiddenReady) {
-      v = els.srcVideo;
-      if (v.muted) { v.muted = false; restoreMute = true; }
-      const previewReady = await probeReady(v, 4000);
-      if (!previewReady) throw new Error("動画を読み込めませんでした");
-    }
+    // 書き出しは必ずプレビューの動画を使う。隠し動画は端末によって再生が止まってしまうため、もう使わない
+    if (v.muted) { v.muted = false; restoreMute = true; }
+    const previewReady = await probeReady(v, 4000);
+    if (!previewReady) throw new Error("動画を読み込めませんでした");
     const mime = pickMimeType();
     let rec = null, stopped = null, usedFallback = false;
     const chunks = [];
@@ -819,6 +815,14 @@ els.exportBtn.addEventListener("click", async () => {
       setupRecorder(capture.call(v));
     }
 
+    // 録画を始める前に、実際に再生が進むかを短く確かめる（進まなければすぐ知らせる）
+    await playWithRetry(v);
+    const t0 = v.currentTime;
+    await new Promise((r) => setTimeout(r, 700));
+    const advanced = v.currentTime > t0 + 0.05;
+    v.pause();
+    if (!advanced && !v.ended) throw new Error("書き出し用の再生が始まりませんでした");
+    await seekTo(v, ranges[0].start);
     await playWithRetry(v);
     rec.start(200);
     for (let i = 0; i < ranges.length; i++) {
