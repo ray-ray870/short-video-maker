@@ -186,6 +186,7 @@
       <section class="card">
         <h2><span class="step">4</span>ショート動画を作る</h2>
         <button id="exportBtn" disabled>🎥 ショート動画を作る</button>
+        <progress id="exportProgress" max="100" value="0"></progress>
         <p class="status" id="exportStatus">選んだ範囲をつなげて1本の縦型動画にします。再生しながら録画する方式なので、出来上がりの長さと同じくらい時間がかかります。録画中は画面を閉じないでください。</p>
       </section>
 
@@ -216,7 +217,7 @@ const els = {
   rangeStatus: $("rangeStatus"), rangeList: $("rangeList"), rangeTotal: $("rangeTotal"),
   transcribeBtn: $("transcribeBtn"), asrProgress: $("asrProgress"), asrStatus: $("asrStatus"), modelSelect: $("modelSelect"),
   segList: $("segList"),
-  exportBtn: $("exportBtn"), exportStatus: $("exportStatus"),
+  exportBtn: $("exportBtn"), exportStatus: $("exportStatus"), exportProgress: $("exportProgress"),
   canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
   mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"),
@@ -663,6 +664,9 @@ els.exportBtn.addEventListener("click", async () => {
   els.exportBtn.disabled = true;
   els.canvasBox.style.display = "flex";
   els.canvasCap.style.display = "block";
+  els.exportProgress.style.display = "block";
+  els.exportProgress.value = 0;
+  setStatus(els.exportStatus, "書き出し中… 0%");
   try {
     // 書き出し用の隠し動画が読み込めない端末では、プレビュー側の動画で代用する（Android対策）
     const hiddenReady = await probeReady(els.exportVideo, 4000);
@@ -697,7 +701,9 @@ els.exportBtn.addEventListener("click", async () => {
       const seg = state.segments.find((s) => t >= s.start && t < s.end);
       if (seg && seg.text.trim()) drawSubtitle(ctx, seg.text.trim(), W, H);
       const done = outElapsed + Math.max(0, Math.min(t, curRange.end) - curRange.start);
-      setStatus(els.exportStatus, "録画中… " + done.toFixed(1) + " / " + totalDur.toFixed(1) + " 秒");
+      const pct = totalDur > 0 ? Math.min(100, Math.floor((done / totalDur) * 100)) : 0;
+      els.exportProgress.value = pct;
+      setStatus(els.exportStatus, "書き出し中… " + pct + "%");
     };
 
     await seekTo(v, ranges[0].start);
@@ -761,6 +767,7 @@ els.exportBtn.addEventListener("click", async () => {
   } finally {
     if (restoreMute) els.srcVideo.muted = true;
     try { v.pause(); } catch (e) {}
+    els.exportProgress.style.display = "none";
     updateActionButtons();
   }
 });
