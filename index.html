@@ -120,7 +120,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v34）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v35）</p>
 </header>
 
 <div class="wrap">
@@ -799,21 +799,37 @@ function drawContain(ctx, v, W, H) {
   const w = vw * scale, h = vh * scale;
   ctx.drawImage(v, (W - w) / 2, (H - h) / 2, w, h);
 }
-function drawSubtitle(ctx, text, W, H, marks) {
+function drawSubtitle(ctx, text, W, H, marks, mediaBottom) {
   const flags = highlightFlags(text, marks);
   const sc = W / 1080;
-  ctx.font = "900 " + Math.round(84 * sc) + 'px "Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif';
   ctx.textBaseline = "alphabetic";
   ctx.lineJoin = "round";
-  const maxW = 980 * sc, lines = [];
-  let line = "";
-  for (let i = 0; i < text.length; i++) {
-    const test = line + text[i];
-    if (ctx.measureText(test).width > maxW && line.length > 0) { lines.push(line); line = text[i]; }
-    else line = test;
+  const maxW = 980 * sc;
+  let fs = 84 * sc;
+  const wrapLines = () => {
+    ctx.font = "900 " + Math.round(fs) + 'px "Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif';
+    const out = [];
+    let line = "";
+    for (let i = 0; i < text.length; i++) {
+      const test = line + text[i];
+      if (ctx.measureText(test).width > maxW && line.length > 0) { out.push(line); line = text[i]; }
+      else line = test;
+    }
+    if (line) out.push(line);
+    return out;
+  };
+  let lines = wrapLines();
+  const bottom = H - 90 * sc;
+  // 映像の下に余白（帯）がある場合は、字幕が映像に被らないよう、帯に収まるまでフォントを小さくする
+  if (mediaBottom != null && (bottom - (mediaBottom + 10 * sc)) > 50 * sc) {
+    const bandTop = mediaBottom + 10 * sc;
+    const blockTop = () => bottom - (lines.length - 1) * (fs * (106 / 84)) - fs * 0.9;
+    while (lines.length > 1 && blockTop() < bandTop && fs > 30 * sc) {
+      fs -= 4 * sc;
+      lines = wrapLines();
+    }
   }
-  if (line) lines.push(line);
-  const lineH = 106 * sc, bottom = H - 280 * sc;
+  const lineH = fs * (106 / 84);
   lines.forEach((ln, li) => {
     const y = bottom - (lines.length - 1 - li) * lineH;
     const baseIdx = lines.slice(0, li).join("").length;
@@ -1023,6 +1039,13 @@ function drawTopText(ctx, W, H) {
   const setF = () => { ctx.font = "700 " + fs + "px 'Noto Sans CJK JP', sans-serif"; };
   setF();
   const maxW = W * 0.92;
+  // 改行していないところで折り返さないよう、最も長い行が1行に収まるまでフォントを小さくする
+  let maxPartW = 0;
+  text.split("\n").forEach((part) => { maxPartW = Math.max(maxPartW, ctx.measureText(part).width); });
+  if (maxPartW > maxW && maxPartW > 0) {
+    fs = Math.max(18, Math.floor(fs * maxW / maxPartW));
+    setF();
+  }
   const buildLines = () => {
     const lines = [];
     text.split("\n").forEach((part) => {
@@ -1115,7 +1138,8 @@ function composeSrc(fctx, W2, H2, bgCtx, bgCanvas, src, seg) {
     fctx.drawImage(bgCanvas, 0, 0, W2, H2);
   }
   drawContainSrc(fctx, src, dims[0], dims[1], W2, H2);
-  if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.marks || {});
+  const mediaBottom = (H2 - dims[1] * Math.min(W2 / dims[0], H2 / dims[1])) / 2 + dims[1] * Math.min(W2 / dims[0], H2 / dims[1]);
+  if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.marks || {}, mediaBottom);
   drawTopText(fctx, W2, H2);
 }
 function buildTimeline(ranges) {
@@ -1463,8 +1487,10 @@ els.exportBtn.addEventListener("click", async () => {
           fctx.drawImage(bgCanvas, 0, 0, W2, H2);
         }
         drawContain(fctx, v, W2, H2);
+        const mbScale = (v.videoWidth && v.videoHeight) ? Math.min(W2 / v.videoWidth, H2 / v.videoHeight) : 0;
+        const mediaBottom = mbScale ? (H2 - v.videoHeight * mbScale) / 2 + v.videoHeight * mbScale : null;
         const seg = state.segments.find((s) => t >= s.start && t < s.end);
-        if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.marks || {});
+        if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.marks || {}, mediaBottom);
         drawTopText(fctx, W2, H2);
         progressOnly();
       };
