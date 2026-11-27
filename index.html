@@ -7,9 +7,9 @@
 <title>ショート動画メーカー（試作品）</title>
 <style>
   :root{
-    --bg:#f4f4f7; --card:#ffffff; --ink:#1d1d22; --sub:#5a5a66;
-    --accent:#e8362a; --accent-ink:#ffffff; --line:#e2e2ea;
-    --ok:#0a7d3b; --warn:#9a6a00;
+    --bg:#f2edfa; --card:#ffffff; --ink:#2e1a47; --sub:#7c6e99;
+    --accent:#5b2a86; --accent-ink:#ffffff; --line:#ddd2f0;
+    --ok:#2e9e63; --warn:#9a6a00; --mint:#a9dfc0; --mint-bg:#effaf2;
   }
   *{ box-sizing:border-box; }
   html{ -webkit-text-size-adjust:100%; }
@@ -19,10 +19,10 @@
     font-size:16px; line-height:1.6;
   }
   header{
-    background:#191920; color:#fff; padding:18px 16px 14px;
+    background:linear-gradient(135deg,#3b2163,#5b2a86); color:#fff; padding:18px 16px 14px;
   }
   header h1{ margin:0; font-size:22px; line-height:1.3; }
-  header p{ margin:6px 0 0; font-size:14px; color:#c9c9d4; }
+  header p{ margin:6px 0 0; font-size:14px; color:#d9c8f5; }
   .wrap{ max-width:1180px; margin:0 auto; padding:14px 12px 40px; }
   .layout{ display:flex; flex-direction:column; gap:14px; }
   .card{
@@ -41,16 +41,19 @@
     font-size:17px; font-weight:700; border-radius:12px; border:0; cursor:pointer;
     background:var(--accent); color:var(--accent-ink);
   }
-  button.secondary{ background:#2f2f38; }
-  button:disabled{ background:#b9b9c4; cursor:not-allowed; }
+  button.secondary{ background:#8e6cc8; }
+  button:disabled{ background:#c9bce0; cursor:not-allowed; }
   button.mini{
     display:inline-block; width:auto; min-height:44px; padding:8px 14px;
-    font-size:15px; background:#ececf1; color:var(--ink);
+    font-size:15px; background:#efe8fa; color:var(--ink);
   }
   button.mini.danger{ background:#fdeceb; color:#b3261e; }
   input[type="text"], input[type="number"], textarea, select{
     width:100%; min-height:48px; padding:10px 12px; font-size:16px;
-    border:1.5px solid #c6c6d2; border-radius:10px; background:#fff; color:var(--ink);
+    border:1.5px solid #c4b2e3; border-radius:10px; background:#fff; color:var(--ink);
+  }
+  input[type="text"]:focus, input[type="number"]:focus, textarea:focus, select:focus{
+    border-color:var(--accent); outline:2px solid #d9c8f5; outline-offset:0;
   }
   textarea{ min-height:56px; resize:vertical; line-height:1.5; }
   label{ display:block; font-weight:700; font-size:15px; margin:12px 0 6px; }
@@ -61,7 +64,7 @@
   .file-btn{
     display:flex; align-items:center; justify-content:center;
     min-height:56px; padding:12px; border-radius:12px; cursor:pointer;
-    background:#2f2f38; color:#fff; font-size:17px; font-weight:700; text-align:center;
+    background:var(--accent); color:#fff; font-size:17px; font-weight:700; text-align:center;
   }
   input[type="file"]{ position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; }
   .preview-box{
@@ -75,11 +78,15 @@
   .preview-cap{ text-align:center; color:var(--sub); font-size:13px; margin-top:6px; }
   .status{ font-size:15px; margin-top:10px; min-height:1.4em; white-space:pre-wrap; }
   .status.ok{ color:var(--ok); } .status.warn{ color:var(--warn); }
-  progress{ width:100%; height:14px; margin-top:8px; display:none; }
+  progress{ width:100%; height:14px; margin-top:8px; display:none; accent-color:var(--accent); }
   .seg-list{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
   .seg{
-    border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:#fbfbfc;
+    border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:#fbf9ff;
   }
+  .edit-box{ background:#f6f1fd; border:1px solid var(--line); border-radius:10px; padding:8px; margin-top:6px; }
+  .edit-label{ font-size:13px; font-weight:700; color:var(--accent); margin-bottom:4px; }
+  .color-box{ background:var(--mint-bg); border:1px solid var(--mint); border-radius:10px; padding:8px; margin-top:10px; }
+  .color-label{ font-size:13px; font-weight:700; color:#1e7a46; margin-bottom:4px; }
   .seg .time{ font-size:13px; color:var(--sub); font-variant-numeric:tabular-nums; }
   .seg .text{ font-size:16px; }
   .seg textarea{ margin-top:4px; }
@@ -87,16 +94,16 @@
   .fld-label{ display:block; font-weight:700; margin-bottom:6px; }
   .chip-row{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
   .chip{
-    border:2px solid var(--line); background:#fff; color:var(--ink);
+    border:2px solid #c4b2e3; background:#fff; color:var(--ink);
     border-radius:999px; padding:6px 12px; font-size:15px; cursor:pointer;
   }
   .chip.c-blue{ background:#33b5ff; border-color:#1a7fc1; color:#fff; font-weight:700; }
   .chip.c-yellow{ background:#ffd83d; border-color:#e0a800; font-weight:700; }
   .chip.c-red{ background:#ff5252; border-color:#c62828; color:#fff; font-weight:700; }
-  .seg.in-range{ border-color:var(--accent); background:#fff7f6; }
+  .seg.in-range{ border-color:var(--accent); background:#fbf9ff; }
   .range-item{
     display:flex; align-items:center; gap:10px;
-    border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:#fbfbfc;
+    border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:#fbf9ff;
   }
   .range-item .info{ flex:1; font-variant-numeric:tabular-nums; }
   .range-item .info .dur{ color:var(--sub); font-size:13px; }
@@ -104,7 +111,7 @@
   .notes li{ margin:4px 0; }
   a.download{
     display:flex; align-items:center; justify-content:center; min-height:52px;
-    background:var(--ok); color:#fff; border-radius:12px; font-size:17px; font-weight:700;
+    background:var(--mint); color:#173d27; border-radius:12px; font-size:17px; font-weight:700;
     text-decoration:none; padding:12px 16px; margin-top:10px;
   }
   .hidden-video{ position:absolute; left:-9999px; top:0; width:2px; height:2px; opacity:0.01; }
@@ -120,7 +127,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v40）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v41）</p>
 </header>
 
 <div class="wrap">
@@ -215,11 +222,14 @@
           </select>
         </div>
         <div class="fld">
-          <span class="fld-label">上の文字（任意）</span>
+          <span class="fld-label">✏️ 上の文字（任意・入力）</span>
           <textarea id="topText" rows="2" placeholder="例：佐世保市議会議員選挙　〇〇〇〇〇&#10;再生の道推薦"></textarea>
           <p class="hint">入力した文字が、動画の上のほうにずっと表示されます。改行もできます（右寄せ）。</p>
-          <div class="chip-row" id="topChips"></div>
-          <p class="hint">スペースで区切った言葉は、タップで色を変えられます（青→黄色→赤→解除）。</p>
+          <div class="color-box">
+            <div class="color-label">🎨 色付け（タップで色変更：青→黄色→赤→解除）</div>
+            <div class="chip-row" id="topChips"></div>
+            <p class="hint">スペースで区切った言葉がボタンになります。</p>
+          </div>
         </div>
         <div class="fld">
           <span class="fld-label">画像・動画を挿入（任意）</span>
@@ -749,19 +759,26 @@ function renderSegList() {
     const div = document.createElement("div");
     div.className = "seg in-range";
     const t = document.createElement("div");
-    t.className = "time"; t.textContent = "範囲" + (s.range + 1) + "　" + fmt(s.start) + " 〜 " + fmt(s.end) + "（タップで編集）";
+    t.className = "time"; t.textContent = "範囲" + (s.range + 1) + "　" + fmt(s.start) + " 〜 " + fmt(s.end);
+    const editBox = document.createElement("div");
+    editBox.className = "edit-box";
+    const elab = document.createElement("div");
+    elab.className = "edit-label"; elab.textContent = "✏️ 文字の編集";
     const ta = document.createElement("textarea");
     ta.value = s.text; ta.rows = 2; ta.setAttribute("aria-label", "字幕 " + (idx + 1));
     ta.addEventListener("input", () => { state.segments[idx].text = ta.value; saveState(); });
     ta.addEventListener("change", () => renderSegList());
-    div.appendChild(t); div.appendChild(ta);
+    editBox.appendChild(elab); editBox.appendChild(ta);
+    div.appendChild(t); div.appendChild(editBox);
     // 色付け：文節をタップするたびに 青→黄色→赤→解除 と切り替わる（数字と「」は自動で黄色）
     const chunks = splitChunks(s.text);
     if (chunks.length > 1) {
+      const cbox = document.createElement("div");
+      cbox.className = "color-box";
       const hint = document.createElement("div");
-      hint.className = "time";
-      hint.textContent = "色付けしたい言葉をタップ（青→黄色→赤→解除）";
-      div.appendChild(hint);
+      hint.className = "color-label";
+      hint.textContent = "🎨 色付け（タップで色変更：青→黄色→赤→解除）";
+      cbox.appendChild(hint);
       const row = document.createElement("div");
       row.className = "chip-row";
       if (!s.marks || typeof s.marks !== "object") s.marks = {};
@@ -780,7 +797,8 @@ function renderSegList() {
         });
         row.appendChild(b);
       });
-      div.appendChild(row);
+      cbox.appendChild(row);
+      div.appendChild(cbox);
     }
     els.segList.appendChild(div);
   });
