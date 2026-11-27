@@ -120,10 +120,19 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v39）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v40）</p>
 </header>
 
 <div class="wrap">
+  <section class="card" id="restoreBar" style="display:none">
+    <h2>💾 前回の作業があります</h2>
+    <p class="status" id="restoreInfo"></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" id="restoreBtn">復元する</button>
+      <button type="button" id="discardSaveBtn" class="mini danger">保存を消す</button>
+    </div>
+    <p class="hint">復元したら、ステップ1で同じ動画を選び直してください。範囲・字幕・設定がそのまま使えます。（ファイルから挿入した素材だけは保存されません）</p>
+  </section>
   <div class="layout">
     <div class="col-preview">
       <section class="card">
@@ -214,6 +223,7 @@
         </div>
         <div class="fld">
           <span class="fld-label">画像・動画を挿入（任意）</span>
+          <label class="file-btn" for="insertInput">📁 画像・動画を選ぶ</label>
           <input type="file" id="insertInput" accept="image/*,video/*" multiple>
           <div class="seg-list" id="insertList"></div>
           <p class="hint">最初・切り抜きの間・最後に、好きな画像や動画を入れられます。画像は表示する秒数を指定できます（初期値3秒）。動画はそのままの長さで入ります。</p>
@@ -260,6 +270,7 @@ const els = {
   canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
   mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"), srtLink: $("srtLink"),
+  restoreBar: $("restoreBar"), restoreInfo: $("restoreInfo"), restoreBtn: $("restoreBtn"), discardSaveBtn: $("discardSaveBtn"),
   exportVideo: $("exportVideo"),
 };
 const state = {
@@ -402,6 +413,7 @@ function renderRanges() {
     ? "合計 " + state.ranges.length + " か所・" + totalRangeSec().toFixed(1) + " 秒のショートになります。"
     : "";
   renderInserts();
+  saveState();
 }
 function renderInserts() {
   if (!els.insertList) return;
@@ -447,9 +459,10 @@ function renderInserts() {
     div.appendChild(info); div.appendChild(del);
     els.insertList.appendChild(div);
   });
+  saveState();
 }
-els.bgSelect.addEventListener("change", () => { state.bgMode = els.bgSelect.value; });
-els.topText.addEventListener("input", () => { state.topText = els.topText.value; renderTopChips(); });
+els.bgSelect.addEventListener("change", () => { state.bgMode = els.bgSelect.value; saveState(); });
+els.topText.addEventListener("input", () => { state.topText = els.topText.value; renderTopChips(); saveState(); });
 els.insertInput.addEventListener("change", async () => {
   const files = Array.from(els.insertInput.files || []);
   els.insertInput.value = "";
@@ -488,7 +501,7 @@ els.insertInput.addEventListener("change", async () => {
 /* ---------- 素材BOX（アプリに最初から入っている素材） ---------- */
 async function addMaterialInsert(mat) {
   const isImg = mat.kind === "image";
-  const ins = { kind: mat.kind, name: mat.name, url: mat.src, dur: 3, pos: state.ranges.length, img: null, el: null, audioData: null };
+  const ins = { kind: mat.kind, name: mat.name, url: mat.src, dur: 3, pos: state.ranges.length, img: null, el: null, audioData: null, fromBox: true };
   if (isImg) {
     const img = new Image();
     img.src = mat.src;
@@ -508,6 +521,7 @@ async function addMaterialInsert(mat) {
   }
   state.inserts.push(ins);
   renderInserts();
+  return ins;
 }
 async function loadMaterialBox() {
   if (!els.materialBox) return;
@@ -738,7 +752,7 @@ function renderSegList() {
     t.className = "time"; t.textContent = "範囲" + (s.range + 1) + "　" + fmt(s.start) + " 〜 " + fmt(s.end) + "（タップで編集）";
     const ta = document.createElement("textarea");
     ta.value = s.text; ta.rows = 2; ta.setAttribute("aria-label", "字幕 " + (idx + 1));
-    ta.addEventListener("input", () => { state.segments[idx].text = ta.value; });
+    ta.addEventListener("input", () => { state.segments[idx].text = ta.value; saveState(); });
     ta.addEventListener("change", () => renderSegList());
     div.appendChild(t); div.appendChild(ta);
     // 色付け：文節をタップするたびに 青→黄色→赤→解除 と切り替わる（数字と「」は自動で黄色）
@@ -770,6 +784,7 @@ function renderSegList() {
     }
     els.segList.appendChild(div);
   });
+  saveState();
 }
 
 /* ---------- 5. 書き出し（Canvas + MediaRecorder、複数範囲をつなぐ） ---------- */
@@ -1168,6 +1183,7 @@ function renderTopChips() {
     });
     els.topChips.appendChild(b);
   });
+  saveState();
 }
 function composeSrc(fctx, W2, H2, bgCtx, bgCanvas, src, seg) {
   const dims = srcDims(src);
@@ -1613,6 +1629,76 @@ els.exportBtn.addEventListener("click", async () => {
     updateActionButtons();
   }
 });
+
+/* ---------- 作業の保存・復元 ---------- */
+const SAVE_KEY = "svm-save-v1";
+let saveTimer = null;
+function saveState() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      if (!state.ranges.length && !state.segments.length && !(state.topText || "").trim()) return;
+      const data = {
+        savedAt: new Date().toISOString(),
+        fileName: state.file ? state.file.name : "",
+        ranges: state.ranges,
+        segments: state.segments.map((s) => ({ start: s.start, end: s.end, text: s.text, range: s.range, marks: s.marks || {} })),
+        bgMode: state.bgMode || "blur",
+        topText: state.topText || "",
+        topMarks: state.topMarks || {},
+        matInserts: (state.inserts || []).filter((i) => i.fromBox).map((i) => ({ name: i.name, src: i.url, kind: i.kind, dur: i.dur, pos: i.pos })),
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    } catch (e) {}
+  }, 400);
+}
+function loadSave() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d || (!d.ranges && !d.segments)) return null;
+    return d;
+  } catch (e) { return null; }
+}
+async function restoreSave() {
+  const d = loadSave();
+  if (!d) return;
+  state.ranges = (d.ranges || []).filter((r) => r && r.end > r.start);
+  state.segments = (d.segments || []).map((s) => ({ start: s.start, end: s.end, text: s.text || "", range: s.range || 0, marks: s.marks || {} }));
+  state.bgMode = d.bgMode || "blur";
+  els.bgSelect.value = state.bgMode;
+  state.topText = d.topText || "";
+  els.topText.value = state.topText;
+  state.topMarks = d.topMarks || {};
+  for (const mi of (d.matInserts || [])) {
+    const ins = await addMaterialInsert({ name: mi.name, src: mi.src, kind: mi.kind });
+    if (ins) {
+      ins.pos = mi.pos;
+      if (mi.kind === "image" && mi.dur) ins.dur = mi.dur;
+    }
+  }
+  renderRanges();
+  renderSegList();
+  renderTopChips();
+  renderInserts();
+  updateActionButtons();
+  els.restoreBar.style.display = "none";
+  setStatus(els.rangeStatus, "保存していた作業を復元しました。同じ動画（" + (d.fileName || "") + "）を選んでください。", "ok");
+}
+els.restoreBtn.addEventListener("click", () => { restoreSave(); });
+els.discardSaveBtn.addEventListener("click", () => {
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  els.restoreBar.style.display = "none";
+});
+(function initRestoreBar() {
+  const d = loadSave();
+  if (d && ((d.ranges && d.ranges.length) || (d.segments && d.segments.length))) {
+    const when = d.savedAt ? new Date(d.savedAt) : null;
+    els.restoreInfo.textContent = "動画：" + (d.fileName || "不明") + "／範囲 " + (d.ranges ? d.ranges.length : 0) + " か所・字幕 " + (d.segments ? d.segments.length : 0) + " 件" + (when ? "／" + when.toLocaleString("ja-JP") + " 保存" : "");
+    els.restoreBar.style.display = "block";
+  }
+})();
 
 renderRanges();
 renderSegList();
