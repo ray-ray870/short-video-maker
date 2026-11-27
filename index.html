@@ -104,6 +104,12 @@
   .edit-label{ font-size:13px; font-weight:700; color:var(--accent); margin-bottom:4px; }
   .color-box{ background:var(--mint-bg); border:1px solid var(--mint); border-radius:10px; padding:8px; margin-top:10px; }
   .color-label{ font-size:13px; font-weight:700; color:#1e7a46; margin-bottom:4px; }
+  .color-picker{ display:flex; gap:10px; margin-top:2px; }
+  .color-swatch{
+    display:block; width:44px; height:44px; min-height:44px; padding:0;
+    border-radius:50%; border:2px solid #c4b2e3; cursor:pointer;
+  }
+  .color-swatch.sel{ border-color:var(--accent); box-shadow:0 0 0 3px #d9c8f5; }
   .seg .time{ font-size:13px; color:var(--sub); font-variant-numeric:tabular-nums; }
   .seg .text{ font-size:16px; }
   .seg textarea{ margin-top:4px; }
@@ -144,7 +150,7 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v46）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v47）</p>
 </header>
 
 <div class="wrap">
@@ -255,6 +261,17 @@
           </div>
         </div>
         <div class="fld">
+          <span class="fld-label">🎨 上の文字の色</span>
+          <div class="color-picker" id="topColorPicker">
+            <button type="button" class="color-swatch sel" data-color="white" style="background:#ffffff" aria-label="白"></button>
+            <button type="button" class="color-swatch" data-color="black" style="background:#1a1a1a" aria-label="黒"></button>
+            <button type="button" class="color-swatch" data-color="blue" style="background:#33b5ff" aria-label="青"></button>
+            <button type="button" class="color-swatch" data-color="yellow" style="background:#ffe600" aria-label="黄色"></button>
+            <button type="button" class="color-swatch" data-color="red" style="background:#ff5252" aria-label="赤"></button>
+          </div>
+          <p class="hint">色付けした言葉は、そちらの色が優先されます。黒を選んだときは白い縁取りになります。</p>
+        </div>
+        <div class="fld">
           <span class="fld-label">画像・動画を挿入（任意）</span>
           <label class="file-btn" for="insertInput">📁 画像・動画を選ぶ</label>
           <input type="file" id="insertInput" accept="image/*,video/*" multiple>
@@ -299,7 +316,7 @@ const els = {
   segList: $("segList"),
   exportBtn: $("exportBtn"), exportStatus: $("exportStatus"), exportProgress: $("exportProgress"), exportLog: $("exportLog"),
   insertInput: $("insertInput"), insertList: $("insertList"), materialBox: $("materialBox"),
-  bgSelect: $("bgSelect"), topText: $("topText"), topChips: $("topChips"),
+  bgSelect: $("bgSelect"), topText: $("topText"), topChips: $("topChips"), topColorPicker: $("topColorPicker"),
   canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
   mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"), srtLink: $("srtLink"),
@@ -309,7 +326,7 @@ const els = {
 };
 const state = {
   file: null, url: null, ranges: [], segments: [], inserts: [],
-  bgMode: "blur", topText: "", topMarks: {},
+  bgMode: "blur", topText: "", topMarks: {}, topColor: "white",
   audioData: null, audioPromise: null, asrWorker: null, asrPhase: "",
   audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
 };
@@ -497,6 +514,21 @@ function renderInserts() {
 }
 els.bgSelect.addEventListener("change", () => { state.bgMode = els.bgSelect.value; saveState(); });
 els.topText.addEventListener("input", () => { state.topText = els.topText.value; renderTopChips(); saveState(); });
+function reflectTopColor() {
+  if (!els.topColorPicker) return;
+  els.topColorPicker.querySelectorAll(".color-swatch").forEach((b) => {
+    b.classList.toggle("sel", b.dataset.color === (state.topColor || "white"));
+  });
+}
+if (els.topColorPicker) {
+  els.topColorPicker.querySelectorAll(".color-swatch").forEach((b) => {
+    b.addEventListener("click", () => {
+      state.topColor = b.dataset.color;
+      reflectTopColor();
+      saveState();
+    });
+  });
+}
 els.insertInput.addEventListener("change", async () => {
   const files = Array.from(els.insertInput.files || []);
   els.insertInput.value = "";
@@ -1133,11 +1165,13 @@ function drawContainSrc(ctx, src, sw, sh, W, H) {
   const w = sw * scale, h = sh * scale;
   ctx.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
 }
+const TOP_COLOR_HEX = { white: "#FFFFFF", black: "#1A1A1A", blue: "#33B5FF", yellow: "#FFE600", red: "#FF5252" };
 function drawTopText(ctx, W, H, overMedia) {
   const text = (state.topText || "").replace(/\r/g, "");
   if (!text.trim()) return;
   const marks = state.topMarks || {};
-  const colorOf = (chunk) => HL_FILL[marks[chunk] === "blue" ? 1 : marks[chunk] === "yellow" ? 2 : marks[chunk] === "red" ? 3 : 0];
+  const baseColor = TOP_COLOR_HEX[state.topColor || "white"] || "#FFFFFF";
+  const colorOf = (chunk) => marks[chunk] ? HL_FILL[HL_CODES[marks[chunk]] || 0] : baseColor;
   let fs = Math.round(W * 0.056);
   ctx.save();
   // 映像の上に直接乗るとき（縦長動画など帯がないとき）は、少し透過させて映像が透けるようにする
@@ -1193,7 +1227,7 @@ function drawTopText(ctx, W, H, overMedia) {
     let x = Math.round(W * 0.96 - totalW);
     atoms.forEach((at) => {
       ctx.lineWidth = Math.max(4, lfs * 0.16);
-      ctx.strokeStyle = "rgba(30,10,60,0.9)";
+      ctx.strokeStyle = at.c === "#1A1A1A" ? "rgba(255,255,255,0.9)" : "rgba(30,10,60,0.9)";
       ctx.lineJoin = "round";
       ctx.strokeText(at.t, x, y);
       ctx.fillStyle = at.c;
@@ -1692,6 +1726,7 @@ function saveState() {
         segments: state.segments.map((s) => ({ start: s.start, end: s.end, text: s.text, range: s.range, marks: s.marks || {} })),
         bgMode: state.bgMode || "blur",
         topText: state.topText || "",
+        topColor: state.topColor || "white",
         topMarks: state.topMarks || {},
         matInserts: (state.inserts || []).filter((i) => i.fromBox).map((i) => ({ name: i.name, src: i.url, kind: i.kind, dur: i.dur, pos: i.pos })),
       };
@@ -1716,6 +1751,8 @@ async function restoreSave() {
   state.bgMode = d.bgMode || "blur";
   els.bgSelect.value = state.bgMode;
   state.topText = d.topText || "";
+  state.topColor = d.topColor || "white";
+  reflectTopColor();
   els.topText.value = state.topText;
   state.topMarks = d.topMarks || {};
   for (const mi of (d.matInserts || [])) {
