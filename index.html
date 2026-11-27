@@ -35,7 +35,6 @@
     margin-right:8px; vertical-align:2px; padding:0 6px;
   }
   .hint{ color:var(--sub); font-size:14px; margin:6px 0 0; }
-  /* タップしやすいボタン・入力欄（高さ48px以上、文字16px以上で自動ズーム防止） */
   button{
     display:block; width:100%; min-height:52px; padding:12px 16px;
     font-size:17px; font-weight:700; border-radius:12px; border:0; cursor:pointer;
@@ -43,7 +42,12 @@
   }
   button.secondary{ background:#2f2f38; }
   button:disabled{ background:#b9b9c4; cursor:not-allowed; }
-  input[type="text"], input[type="number"], textarea{
+  button.mini{
+    display:inline-block; width:auto; min-height:44px; padding:8px 14px;
+    font-size:15px; background:#ececf1; color:var(--ink);
+  }
+  button.mini.danger{ background:#fdeceb; color:#b3261e; }
+  input[type="text"], input[type="number"], textarea, select{
     width:100%; min-height:48px; padding:10px 12px; font-size:16px;
     border:1.5px solid #c6c6d2; border-radius:10px; background:#fff; color:var(--ink);
   }
@@ -52,13 +56,13 @@
   label:first-of-type{ margin-top:0; }
   .row{ display:flex; gap:10px; }
   .row > div{ flex:1; }
+  .row > button{ flex:1; }
   .file-btn{
     display:flex; align-items:center; justify-content:center;
     min-height:56px; padding:12px; border-radius:12px; cursor:pointer;
     background:#2f2f38; color:#fff; font-size:17px; font-weight:700; text-align:center;
   }
   input[type="file"]{ position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; }
-  /* 9:16 プレビュー（画面に収まるサイズ） */
   .preview-box{
     width:min(100%, 380px); margin:4px auto 0; aspect-ratio:9/16;
     max-height:62dvh; background:#000; border-radius:12px; overflow:hidden;
@@ -79,6 +83,12 @@
   .seg .text{ font-size:16px; }
   .seg textarea{ margin-top:4px; }
   .seg.in-range{ border-color:var(--accent); background:#fff7f6; }
+  .range-item{
+    display:flex; align-items:center; gap:10px;
+    border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:#fbfbfc;
+  }
+  .range-item .info{ flex:1; font-variant-numeric:tabular-nums; }
+  .range-item .info .dur{ color:var(--sub); font-size:13px; }
   .notes{ font-size:14px; color:var(--sub); }
   .notes li{ margin:4px 0; }
   a.download{
@@ -87,7 +97,6 @@
     text-decoration:none; padding:12px 16px; margin-top:10px;
   }
   .hidden-video{ position:absolute; left:-9999px; top:0; width:2px; height:2px; opacity:0.01; }
-  /* 広い画面（タブレット・PC）：プレビュー左＋操作右の2カラム */
   @media (min-width: 900px){
     .wrap{ padding:20px 20px 48px; }
     .layout{ display:grid; grid-template-columns:minmax(320px,400px) 1fr; gap:20px; align-items:start; }
@@ -100,12 +109,11 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>動画を入れて、切り取りたいセリフを書くだけ。字幕つき縦型ショートを自動で作ります。</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。</p>
 </header>
 
 <div class="wrap">
   <div class="layout">
-    <!-- 左カラム（スマホでは上）：プレビュー -->
     <div class="col-preview">
       <section class="card">
         <h2>プレビュー</h2>
@@ -129,7 +137,6 @@
       </section>
     </div>
 
-    <!-- 右カラム（スマホでは下）：操作パネル -->
     <div class="col-main">
       <section class="card">
         <h2><span class="step">1</span>動画を選ぶ</h2>
@@ -139,7 +146,31 @@
       </section>
 
       <section class="card">
-        <h2><span class="step">2</span>文字起こし</h2>
+        <h2><span class="step">2</span>切り抜き範囲を決める（何か所でもOK）</h2>
+        <p class="hint">プレビューを再生して、使いたい場面の「ここから」「ここまで」を押してください。数字で直接直すこともできます。1か所だけでも大丈夫です。</p>
+        <div class="row" style="margin-top:10px;">
+          <button type="button" class="secondary" id="markStartBtn">⏱ ここから</button>
+          <button type="button" class="secondary" id="markEndBtn">ここまで ⏱</button>
+        </div>
+        <div class="row">
+          <div>
+            <label for="rangeStart">開始（秒）</label>
+            <input type="number" id="rangeStart" value="0" min="0" step="0.1" inputmode="decimal">
+          </div>
+          <div>
+            <label for="rangeEnd">終了（秒）</label>
+            <input type="number" id="rangeEnd" value="0" min="0" step="0.1" inputmode="decimal">
+          </div>
+        </div>
+        <button id="addRangeBtn" style="margin-top:14px;" disabled>＋ この範囲を追加する</button>
+        <p class="status" id="rangeStatus">動画を選ぶと範囲を指定できます。</p>
+        <div class="seg-list" id="rangeList"></div>
+        <p class="hint" id="rangeTotal"></p>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">3</span>文字起こし（選んだ範囲だけ）</h2>
+        <p class="hint">選んだ範囲の音声だけを文字起こしするので、動画全体よりずっと早く終わります。終わると、範囲の端は字幕の切れ目に合わせて自動で整えます。</p>
         <label for="modelSelect">字幕の精度</label>
         <select id="modelSelect">
           <option value="Xenova/whisper-small">精度優先（時間がかかります）</option>
@@ -147,53 +178,20 @@
         </select>
         <button id="transcribeBtn" disabled>🎙 文字起こしする</button>
         <progress id="asrProgress" max="100" value="0"></progress>
-        <p class="status" id="asrStatus">動画を選ぶと押せるようになります。初回は音声認識モデルのダウンロードで数分かかることがあります。</p>
+        <p class="status" id="asrStatus">範囲を追加すると押せるようになります。初回は音声認識モデルのダウンロードで数分かかることがあります。</p>
         <div class="seg-list" id="segList"></div>
       </section>
 
       <section class="card">
-        <h2><span class="step">3</span>切り抜き範囲を決める</h2>
-        <label for="phraseInput">切り取りたいセリフ</label>
-        <input type="text" id="phraseInput" placeholder="例：貯金は安心材料">
-        <div class="row">
-          <div>
-            <label for="padBefore">前（秒）</label>
-            <input type="number" id="padBefore" value="8" min="0" step="1" inputmode="decimal">
-          </div>
-          <div>
-            <label for="padAfter">後（秒）</label>
-            <input type="number" id="padAfter" value="14" min="0" step="1" inputmode="decimal">
-          </div>
-          <div>
-            <label for="maxDur">最大（秒）</label>
-            <input type="number" id="maxDur" value="30" min="5" step="1" inputmode="decimal">
-          </div>
-        </div>
-        <button id="decideBtn" style="margin-top:14px;" disabled>✂ 切り抜き範囲を決める</button>
-        <p class="status" id="cutStatus">範囲は文の切れ目（セグメント境界）に合わせて決まります。</p>
-        <div class="row">
-          <div>
-            <label for="cutStart">開始（秒）</label>
-            <input type="number" id="cutStart" value="0" min="0" step="0.1" inputmode="decimal">
-          </div>
-          <div>
-            <label for="cutEnd">終了（秒）</label>
-            <input type="number" id="cutEnd" value="0" min="0" step="0.1" inputmode="decimal">
-          </div>
-        </div>
-        <p class="hint">開始・終了は手で直すこともできます。</p>
-      </section>
-
-      <section class="card">
         <h2><span class="step">4</span>字幕を直す</h2>
-        <p class="hint">切り抜き範囲の中の字幕です。タップすると、その場で文字を直せます（誤字の修正用）。直した内容が書き出しに反映されます。</p>
+        <p class="hint">タップすると、その場で文字を直せます（誤字の修正用）。直した内容が書き出しに反映されます。</p>
         <div class="seg-list" id="editList"></div>
       </section>
 
       <section class="card">
         <h2><span class="step">5</span>ショート動画を作る</h2>
         <button id="exportBtn" disabled>🎥 ショート動画を作る</button>
-        <p class="status" id="exportStatus">再生しながら録画する方式なので、30秒の動画なら約30秒かかります。録画中は画面を閉じないでください。</p>
+        <p class="status" id="exportStatus">選んだ範囲をつなげて1本の縦型動画にします。再生しながら録画する方式なので、出来上がりの長さと同じくらい時間がかかります。録画中は画面を閉じないでください。</p>
       </section>
 
       <section class="card">
@@ -201,8 +199,9 @@
         <ul class="notes">
           <li>処理は<strong>この端末の中だけ</strong>で行われます。動画が外部のサーバーに送られることはありません。</li>
           <li>初回の文字起こしは、音声認識モデル（精度優先は約250MB／速さ優先は約70MB）のダウンロードで数分かかることがあります。Wi-Fi推奨です。</li>
-          <li>長い動画の文字起こしは重い処理です。長い動画はパソコン推奨、スマホでは短い動画でお試しください。</li>
+          <li>文字起こしは選んだ範囲だけなので、長い動画でも大丈夫です。</li>
           <li>字幕の自動文字起こしには誤字が出ることがあります。ステップ4で直してから書き出してください。</li>
+          <li>範囲と範囲のつなぎ目では、一瞬だけ映像が止まって見えることがあります。</li>
           <li>書き出し形式は端末・ブラウザによって変わります（mp4 または webm）。</li>
         </ul>
       </section>
@@ -210,28 +209,27 @@
   </div>
 </div>
 
-<!-- 書き出し用の隠し動画要素 -->
 <video id="exportVideo" class="hidden-video" playsinline></video>
-
 
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
 const els = {
   fileInput: $("fileInput"), fileName: $("fileName"), srcVideo: $("srcVideo"),
+  markStartBtn: $("markStartBtn"), markEndBtn: $("markEndBtn"),
+  rangeStart: $("rangeStart"), rangeEnd: $("rangeEnd"), addRangeBtn: $("addRangeBtn"),
+  rangeStatus: $("rangeStatus"), rangeList: $("rangeList"), rangeTotal: $("rangeTotal"),
   transcribeBtn: $("transcribeBtn"), asrProgress: $("asrProgress"), asrStatus: $("asrStatus"), modelSelect: $("modelSelect"),
-  segList: $("segList"), phraseInput: $("phraseInput"),
-  padBefore: $("padBefore"), padAfter: $("padAfter"), maxDur: $("maxDur"),
-  decideBtn: $("decideBtn"), cutStatus: $("cutStatus"),
-  cutStart: $("cutStart"), cutEnd: $("cutEnd"),
-  editList: $("editList"), exportBtn: $("exportBtn"), exportStatus: $("exportStatus"),
+  segList: $("segList"), editList: $("editList"),
+  exportBtn: $("exportBtn"), exportStatus: $("exportStatus"),
   canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
   mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"),
   exportVideo: $("exportVideo"),
 };
 const state = {
-  file: null, url: null, segments: [], transcriber: null,
+  file: null, url: null, ranges: [], segments: [],
+  audioData: null, audioPromise: null, asrWorker: null, asrPhase: "",
   audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
 };
 const fmt = (s) => {
@@ -243,38 +241,16 @@ function setStatus(el, msg, cls) {
   el.textContent = msg;
   el.className = "status" + (cls ? " " + cls : "");
 }
+function totalRangeSec() {
+  return state.ranges.reduce((a, r) => a + (r.end - r.start), 0);
+}
+function updateActionButtons() {
+  const hasRanges = state.ranges.length > 0;
+  els.transcribeBtn.disabled = !(state.file && hasRanges);
+  els.exportBtn.disabled = !(state.file && hasRanges);
+}
 
 /* ---------- 1. ファイル選択 ---------- */
-els.fileInput.addEventListener("change", () => {
-  const f = els.fileInput.files && els.fileInput.files[0];
-  if (!f) return;
-  if (state.url) URL.revokeObjectURL(state.url);
-  state.file = f;
-  state.url = URL.createObjectURL(f);
-  state.segments = [];
-  els.srcVideo.src = state.url;
-  els.exportVideo.src = state.url;
-  els.fileName.textContent = "選択中：" + f.name;
-  els.transcribeBtn.disabled = false;
-  els.decideBtn.disabled = true;
-  els.exportBtn.disabled = true;
-  els.segList.innerHTML = "";
-  els.editList.innerHTML = "";
-  els.resultCard.style.display = "none";
-  setStatus(els.asrStatus, "音声を準備しています…");
-  // ファイルの読み取り権限が切れる前に、その場で音声を読み込んでおく（Android対策）
-  state.audioData = null;
-  state.audioPromise = decodeAudioTo16kMono(f).then((a) => {
-    state.audioData = a;
-    setStatus(els.asrStatus, "「文字起こしする」を押してください。初回はモデルのダウンロードで数分かかることがあります。");
-    return a;
-  });
-  state.audioPromise.catch(() => {
-    setStatus(els.asrStatus, "音声の読み込みに失敗しました。もう一度、動画を選び直してみてください。", "warn");
-  });
-});
-
-/* ---------- 2. 文字起こし ---------- */
 async function decodeAudioTo16kMono(file) {
   const buf = await file.arrayBuffer();
   const AC = window.AudioContext || window.webkitAudioContext;
@@ -291,6 +267,94 @@ async function decodeAudioTo16kMono(file) {
   } finally { ctx.close(); }
 }
 
+els.fileInput.addEventListener("change", () => {
+  const f = els.fileInput.files && els.fileInput.files[0];
+  if (!f) return;
+  if (state.url) URL.revokeObjectURL(state.url);
+  state.file = f;
+  state.url = URL.createObjectURL(f);
+  state.ranges = [];
+  state.segments = [];
+  els.srcVideo.src = state.url;
+  els.exportVideo.src = state.url;
+  els.fileName.textContent = "選択中：" + f.name;
+  els.addRangeBtn.disabled = false;
+  els.segList.innerHTML = "";
+  els.editList.innerHTML = "";
+  els.resultCard.style.display = "none";
+  setStatus(els.rangeStatus, "プレビューを再生して、範囲を指定してください。");
+  setStatus(els.asrStatus, "音声を準備しています…");
+  renderRanges();
+  renderEditList();
+  updateActionButtons();
+  // ファイルの読み取り権限が切れる前に、その場で音声を読み込んでおく（Android対策）
+  state.audioData = null;
+  state.audioPromise = decodeAudioTo16kMono(f).then((a) => {
+    state.audioData = a;
+    setStatus(els.asrStatus, "範囲を追加して「文字起こしする」を押してください。初回はモデルのダウンロードで数分かかることがあります。");
+    return a;
+  });
+  state.audioPromise.catch(() => {
+    setStatus(els.asrStatus, "音声の読み込みに失敗しました。もう一度、動画を選び直してみてください。", "warn");
+  });
+});
+
+/* ---------- 2. 切り抜き範囲（複数） ---------- */
+els.markStartBtn.addEventListener("click", () => {
+  els.rangeStart.value = els.srcVideo.currentTime.toFixed(1);
+  setStatus(els.rangeStatus, "開始を " + fmt(els.srcVideo.currentTime) + " にしました。終わりの場面で「ここまで」を押してください。");
+});
+els.markEndBtn.addEventListener("click", () => {
+  els.rangeEnd.value = els.srcVideo.currentTime.toFixed(1);
+  setStatus(els.rangeStatus, "終了を " + fmt(els.srcVideo.currentTime) + " にしました。「この範囲を追加する」を押してください。");
+});
+els.addRangeBtn.addEventListener("click", () => {
+  const a = parseFloat(els.rangeStart.value);
+  const b = parseFloat(els.rangeEnd.value);
+  if (isNaN(a) || isNaN(b) || b - a < 0.5) {
+    setStatus(els.rangeStatus, "開始と終了を正しく指定してください（0.5秒以上の長さが必要です）。", "warn");
+    return;
+  }
+  const start = Math.min(a, b), end = Math.max(a, b);
+  const overlap = state.ranges.some((r) => start < r.end && end > r.start);
+  if (overlap) {
+    setStatus(els.rangeStatus, "その範囲は、すでに追加した範囲と重なっています。", "warn");
+    return;
+  }
+  state.ranges.push({ start, end });
+  state.ranges.sort((x, y) => x.start - y.start);
+  setStatus(els.rangeStatus, "範囲を追加しました：" + fmt(start) + " 〜 " + fmt(end), "ok");
+  renderRanges();
+  updateActionButtons();
+});
+function renderRanges() {
+  els.rangeList.innerHTML = "";
+  state.ranges.forEach((r, idx) => {
+    const div = document.createElement("div");
+    div.className = "range-item";
+    const info = document.createElement("div");
+    info.className = "info";
+    const main = document.createElement("div");
+    main.textContent = "範囲" + (idx + 1) + "：" + fmt(r.start) + " 〜 " + fmt(r.end);
+    const dur = document.createElement("div");
+    dur.className = "dur"; dur.textContent = (r.end - r.start).toFixed(1) + " 秒";
+    info.appendChild(main); info.appendChild(dur);
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "mini danger"; del.textContent = "削除";
+    del.addEventListener("click", () => {
+      state.ranges.splice(idx, 1);
+      renderRanges();
+      updateActionButtons();
+    });
+    div.appendChild(info); div.appendChild(del);
+    els.rangeList.appendChild(div);
+  });
+  els.rangeTotal.textContent = state.ranges.length
+    ? "合計 " + state.ranges.length + " か所・" + totalRangeSec().toFixed(1) + " 秒のショートになります。"
+    : "";
+}
+
+/* ---------- 3. 文字起こし（範囲だけ・Worker） ---------- */
 function getAsrWorker() {
   if (state.asrWorker) return state.asrWorker;
   const code = [
@@ -300,7 +364,7 @@ function getAsrWorker() {
     "let transcriberModel = '';",
     "self.onmessage = async (e) => {",
     "  const audio = e.data.audio;",
-    "  const model = e.data.model || 'Xenova/whisper-small';",
+    "  const model = e.data.model || 'Xenova/whisper-base';",
     "  try {",
     "    if (!transcriber || transcriberModel !== model) {",
     '      transcriber = await pipeline("automatic-speech-recognition", model, {',
@@ -322,18 +386,19 @@ function getAsrWorker() {
   return state.asrWorker;
 }
 
-function transcribeWithWorker(audio, model) {
+function transcribeWithWorker(audio, model, onProgress) {
   return new Promise((resolve, reject) => {
-    const worker = getAsrWorker();
+    let worker;
+    try { worker = getAsrWorker(); }
+    catch (e) { reject(e); return; }
     const audioSec = audio.length / 16000;
     const factor = (model && model.indexOf("small") >= 0) ? 2.5 : 1.2;
-    const estRunSec = Math.max(20, audioSec * factor);
+    const estRunSec = Math.max(10, audioSec * factor);
     let runStartedAt = 0;
     const timer = setInterval(() => {
       if (state.asrPhase === "run" && runStartedAt) {
         const pct = Math.min(99, Math.floor(((Date.now() - runStartedAt) / 1000 / estRunSec) * 100));
-        els.asrProgress.value = pct;
-        setStatus(els.asrStatus, "文字起こし中です… " + pct + "%（目安）");
+        onProgress({ phase: "run", pct });
       }
     }, 500);
     const cleanup = () => { clearInterval(timer); worker.removeEventListener("message", onMsg); worker.removeEventListener("error", onErr); };
@@ -343,22 +408,20 @@ function transcribeWithWorker(audio, model) {
         state.asrPhase = "model";
         const p = m.data;
         if (p && p.status === "progress" && typeof p.progress === "number") {
-          els.asrProgress.value = p.progress;
-          setStatus(els.asrStatus, "モデルをダウンロード中：" + (p.file || "") + " " + Math.round(p.progress) + "%");
+          onProgress({ phase: "model", pct: p.progress, file: p.file || "" });
         }
       } else if (m.type === "ready") {
         state.asrPhase = "run";
         runStartedAt = Date.now();
-        els.asrProgress.value = 0;
-        setStatus(els.asrStatus, "文字起こし中です… 0%（目安）");
+        onProgress({ phase: "run", pct: 0 });
       } else if (m.type === "result") {
-        els.asrProgress.value = 100;
+        onProgress({ phase: "run", pct: 100 });
         cleanup(); resolve(m.data);
       } else if (m.type === "error") {
         cleanup(); reject(new Error(m.message));
       }
     };
-    const onErr = (e) => { cleanup(); reject(new Error(e.message || "ワーカーでエラーが起きました")); };
+    const onErr = (e) => { cleanup(); reject(new Error(e.message || "文字起こしの仕組みを読み込めませんでした")); };
     worker.addEventListener("message", onMsg);
     worker.addEventListener("error", onErr);
     state.asrPhase = "model";
@@ -368,7 +431,7 @@ function transcribeWithWorker(audio, model) {
 }
 
 els.transcribeBtn.addEventListener("click", async () => {
-  if (!state.file) return;
+  if (!state.file || !state.ranges.length) return;
   els.transcribeBtn.disabled = true;
   els.asrProgress.style.display = "block";
   els.asrProgress.value = 0;
@@ -379,25 +442,43 @@ els.transcribeBtn.addEventListener("click", async () => {
       try { audio = await state.audioPromise; }
       catch (e) { audio = await decodeAudioTo16kMono(state.file); }
     }
-    setStatus(els.asrStatus, "音声認識モデルを準備しています…（初回はダウンロードで数分かかることがあります）");
-    const out = await transcribeWithWorker(audio, els.modelSelect.value);
-    const chunks = (out && out.chunks) ? out.chunks : [];
-    state.segments = chunks
-      .map((c) => ({
-        start: (c.timestamp && typeof c.timestamp[0] === "number") ? c.timestamp[0] : 0,
-        end: (c.timestamp && typeof c.timestamp[1] === "number") ? c.timestamp[1] : 0,
-        text: (c.text || "").trim(),
-      }))
-      .filter((s) => s.text.length > 0);
+    const model = els.modelSelect.value;
+    const totalSec = totalRangeSec();
+    let doneSec = 0;
+    const allSegments = [];
+    for (let i = 0; i < state.ranges.length; i++) {
+      const r = state.ranges[i];
+      const from = Math.max(0, Math.floor(r.start * 16000));
+      const to = Math.min(audio.length, Math.ceil(r.end * 16000));
+      const slice = audio.subarray(from, to);
+      const out = await transcribeWithWorker(slice, model, (p) => {
+        if (p.phase === "model") {
+          els.asrProgress.value = p.pct;
+          setStatus(els.asrStatus, "モデルをダウンロード中：" + p.file + " " + Math.round(p.pct) + "%");
+        } else {
+          const overall = totalSec > 0 ? Math.min(100, Math.round(((doneSec + (r.end - r.start) * (p.pct / 100)) / totalSec) * 100)) : p.pct;
+          els.asrProgress.value = overall;
+          setStatus(els.asrStatus, "文字起こし中です… 範囲" + (i + 1) + "／" + state.ranges.length + "　全体 " + overall + "%（目安）");
+        }
+      });
+      const chunks = (out && out.chunks) ? out.chunks : [];
+      chunks.forEach((c) => {
+        const text = (c.text || "").trim();
+        if (!text) return;
+        const s0 = (c.timestamp && typeof c.timestamp[0] === "number") ? c.timestamp[0] : 0;
+        const s1 = (c.timestamp && typeof c.timestamp[1] === "number") ? c.timestamp[1] : s0;
+        allSegments.push({ start: r.start + s0, end: r.start + s1, text, range: i });
+      });
+      doneSec += (r.end - r.start);
+    }
+    allSegments.sort((a, b) => a.start - b.start);
+    state.segments = allSegments;
     if (state.segments.length === 0) {
-      setStatus(els.asrStatus, "セリフを検出できませんでした。音声のある動画でお試しください。", "warn");
+      setStatus(els.asrStatus, "セリフを検出できませんでした。音声のある範囲でお試しください。", "warn");
     } else {
-      setStatus(els.asrStatus, "文字起こし完了：" + state.segments.length + " 件のセリフが見つかりました。", "ok");
-      els.decideBtn.disabled = false;
-      if (state.segments.length) {
-        els.cutEnd.value = Math.min(30, state.segments[state.segments.length - 1].end).toFixed(1);
-      }
-      els.exportBtn.disabled = false;
+      snapRangesToSegments();
+      renderRanges();
+      setStatus(els.asrStatus, "文字起こし完了：" + state.segments.length + " 件のセリフが見つかりました。範囲の端は字幕の切れ目に合わせました。", "ok");
     }
     renderSegList();
     renderEditList();
@@ -406,9 +487,19 @@ els.transcribeBtn.addEventListener("click", async () => {
     setStatus(els.asrStatus, "文字起こしでエラーが起きました：" + (e && e.message ? e.message : e), "warn");
   } finally {
     els.asrProgress.style.display = "none";
-    els.transcribeBtn.disabled = false;
+    updateActionButtons();
   }
 });
+
+function snapRangesToSegments() {
+  state.ranges.forEach((r) => {
+    const inside = state.segments.filter((s) => s.end > r.start && s.start < r.end);
+    if (!inside.length) return;
+    r.start = Math.min.apply(null, inside.map((s) => s.start));
+    r.end = Math.max.apply(null, inside.map((s) => s.end));
+  });
+  state.ranges.sort((a, b) => a.start - b.start);
+}
 
 function renderSegList() {
   els.segList.innerHTML = "";
@@ -416,7 +507,7 @@ function renderSegList() {
     const div = document.createElement("div");
     div.className = "seg";
     const t = document.createElement("div");
-    t.className = "time"; t.textContent = fmt(s.start) + " 〜 " + fmt(s.end);
+    t.className = "time"; t.textContent = "範囲" + (s.range + 1) + "　" + fmt(s.start) + " 〜 " + fmt(s.end);
     const tx = document.createElement("div");
     tx.className = "text"; tx.textContent = s.text;
     div.appendChild(t); div.appendChild(tx);
@@ -424,94 +515,27 @@ function renderSegList() {
   });
 }
 
-/* ---------- 3. 切り抜き範囲 ---------- */
-function normalizeText(s) {
-  return (s || "").replace(/[\s、。，．,.!！?？・「」『』（）()【】\[\]〜~…:：;；'"’“”]/g, "");
-}
-els.decideBtn.addEventListener("click", () => {
-  const phrase = normalizeText(els.phraseInput.value);
-  if (!phrase) { setStatus(els.cutStatus, "セリフを入力してください。", "warn"); return; }
-  if (!state.segments.length) { setStatus(els.cutStatus, "先に文字起こしをしてください。", "warn"); return; }
-  // セグメント本文を連結し、文字ごとにセグメント番号を対応づける
-  let concat = ""; const map = [];
-  state.segments.forEach((s, idx) => {
-    const n = normalizeText(s.text);
-    for (const ch of n) { concat += ch; map.push(idx); }
-  });
-  const pos = concat.indexOf(phrase);
-  if (pos < 0) {
-    setStatus(els.cutStatus, "そのセリフは見つかりませんでした。文字起こし結果の表記と合っているか確認してください。", "warn");
-    return;
-  }
-  const firstSeg = map[pos], lastSeg = map[pos + phrase.length - 1];
-  const pStart = state.segments[firstSeg].start;
-  const pEnd = state.segments[lastSeg].end;
-  const padB = Math.max(0, parseFloat(els.padBefore.value) || 0);
-  const padA = Math.max(0, parseFloat(els.padAfter.value) || 0);
-  const maxD = Math.max(5, parseFloat(els.maxDur.value) || 30);
-  const rawStart = Math.max(0, pStart - padB);
-  const rawEnd = pEnd + padA;
-  // セグメント境界（文の切れ目）にスナップ
-  let si = 0;
-  state.segments.forEach((s, i) => { if (s.start <= rawStart) si = i; });
-  if (si > firstSeg) si = firstSeg;
-  let ei = state.segments.length - 1;
-  for (let i = 0; i < state.segments.length; i++) {
-    if (state.segments[i].end >= rawEnd) { ei = i; break; }
-  }
-  if (ei < lastSeg) ei = lastSeg;
-  // 最大秒数を超える場合は、セリフから遠い側の境界を1つずつ詰める
-  let guard = 0;
-  while (state.segments[ei].end - state.segments[si].start > maxD && guard++ < 500) {
-    const dStart = pStart - state.segments[si].start;
-    const dEnd = state.segments[ei].end - pEnd;
-    if (dStart >= dEnd && si < firstSeg) si++;
-    else if (ei > lastSeg) ei--;
-    else if (si < firstSeg) si++;
-    else break;
-  }
-  const cutStart = state.segments[si].start;
-  const cutEnd = state.segments[ei].end;
-  els.cutStart.value = cutStart.toFixed(1);
-  els.cutEnd.value = cutEnd.toFixed(1);
-  setStatus(els.cutStatus,
-    "範囲を決めました：" + fmt(cutStart) + " 〜 " + fmt(cutEnd) + "（" + (cutEnd - cutStart).toFixed(1) + "秒）", "ok");
-  renderEditList();
-});
-
 /* ---------- 4. 字幕編集 ---------- */
-function currentRange() {
-  const a = parseFloat(els.cutStart.value) || 0;
-  const b = parseFloat(els.cutEnd.value) || 0;
-  return [Math.min(a, b), Math.max(a, b)];
-}
 function renderEditList() {
   els.editList.innerHTML = "";
   if (!state.segments.length) {
     els.editList.innerHTML = '<p class="hint">文字起こしをすると、ここに字幕が出ます。</p>';
     return;
   }
-  const [rs, re] = currentRange();
-  let shown = 0;
   state.segments.forEach((s, idx) => {
-    if (s.end <= rs || s.start >= re) return;
-    shown++;
     const div = document.createElement("div");
     div.className = "seg in-range";
     const t = document.createElement("div");
-    t.className = "time"; t.textContent = fmt(s.start) + " 〜 " + fmt(s.end) + "（タップで編集）";
+    t.className = "time"; t.textContent = "範囲" + (s.range + 1) + "　" + fmt(s.start) + " 〜 " + fmt(s.end) + "（タップで編集）";
     const ta = document.createElement("textarea");
     ta.value = s.text; ta.rows = 2; ta.setAttribute("aria-label", "字幕 " + (idx + 1));
     ta.addEventListener("input", () => { state.segments[idx].text = ta.value; });
     div.appendChild(t); div.appendChild(ta);
     els.editList.appendChild(div);
   });
-  if (!shown) els.editList.innerHTML = '<p class="hint">この範囲には字幕がありません。範囲を広げてみてください。</p>';
 }
-els.cutStart.addEventListener("change", renderEditList);
-els.cutEnd.addEventListener("change", renderEditList);
 
-/* ---------- 5. 書き出し（Canvas + MediaRecorder） ---------- */
+/* ---------- 5. 書き出し（Canvas + MediaRecorder、複数範囲をつなぐ） ---------- */
 function highlightFlags(text) {
   const flags = new Array(text.length).fill(false);
   const mark = (re) => {
@@ -544,7 +568,6 @@ function drawSubtitle(ctx, text, W, H) {
   ctx.font = '900 84px "Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif';
   ctx.textBaseline = "alphabetic";
   ctx.lineJoin = "round";
-  // 折り返し（文字単位、最大幅 980px）
   const maxW = 980, lines = [];
   let line = "";
   for (let i = 0; i < text.length; i++) {
@@ -556,7 +579,6 @@ function drawSubtitle(ctx, text, W, H) {
   const lineH = 106, bottom = H - 280;
   lines.forEach((ln, li) => {
     const y = bottom - (lines.length - 1 - li) * lineH;
-    // 行を強調フラグごとの run に分ける
     const baseIdx = lines.slice(0, li).join("").length;
     const runs = [];
     let cur = null;
@@ -582,11 +604,19 @@ function pickMimeType() {
   for (const c of cands) { try { if (MediaRecorder.isTypeSupported(c)) return c; } catch (e) {} }
   return "";
 }
+function seekTo(v, t) {
+  return new Promise((res, rej) => {
+    const onSeeked = () => { v.removeEventListener("seeked", onSeeked); res(); };
+    v.addEventListener("seeked", onSeeked);
+    v.onerror = () => rej(new Error("動画を読み込めませんでした"));
+    v.currentTime = t;
+  });
+}
 
 els.exportBtn.addEventListener("click", async () => {
-  if (!state.url) { setStatus(els.exportStatus, "先に動画を選んでください。", "warn"); return; }
-  const [start, end] = currentRange();
-  if (!(end > start)) { setStatus(els.exportStatus, "開始・終了の範囲が正しくありません。", "warn"); return; }
+  if (!state.url || !state.ranges.length) { setStatus(els.exportStatus, "先に動画と切り抜き範囲を指定してください。", "warn"); return; }
+  const ranges = state.ranges.map((r) => ({ start: r.start, end: r.end })).sort((a, b) => a.start - b.start);
+  const totalDur = ranges.reduce((a, r) => a + (r.end - r.start), 0);
   const v = els.exportVideo;
   const canvas = els.outCanvas, ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
@@ -594,7 +624,6 @@ els.exportBtn.addEventListener("click", async () => {
   els.canvasBox.style.display = "flex";
   els.canvasCap.style.display = "block";
   try {
-    // 音声の取り出し（AudioContext はユーザー操作の中で作る）
     if (!state.audioCtx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       state.audioCtx = new AC();
@@ -614,34 +643,41 @@ els.exportBtn.addEventListener("click", async () => {
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     const stopped = new Promise((res) => { rec.onstop = res; });
 
-    await new Promise((res, rej) => {
-      const onSeeked = () => { v.removeEventListener("seeked", onSeeked); res(); };
-      v.addEventListener("seeked", onSeeked);
-      v.onerror = () => rej(new Error("動画を読み込めませんでした"));
-      v.currentTime = start;
-    });
+    let outElapsed = 0;
+    let curRange = ranges[0];
+    const drawFrame = () => {
+      const t = v.currentTime;
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+      ctx.save();
+      try { ctx.filter = "blur(40px) brightness(0.75)"; } catch (e) {}
+      drawCover(ctx, v, W, H, 1.12);
+      ctx.restore();
+      drawContain(ctx, v, W, H);
+      const seg = state.segments.find((s) => t >= s.start && t < s.end);
+      if (seg && seg.text.trim()) drawSubtitle(ctx, seg.text.trim(), W, H);
+      const done = outElapsed + Math.max(0, Math.min(t, curRange.end) - curRange.start);
+      setStatus(els.exportStatus, "録画中… " + done.toFixed(1) + " / " + totalDur.toFixed(1) + " 秒");
+    };
+
+    await seekTo(v, ranges[0].start);
     await v.play();
     rec.start(200);
-    setStatus(els.exportStatus, "録画中… 0.0 / " + (end - start).toFixed(1) + " 秒");
-
-    await new Promise((res) => {
-      const tick = () => {
-        const t = v.currentTime;
-        // 背景：ぼかし（filter 非対応環境では暗くした拡大映像）＋前景フィット
-        ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
-        ctx.save();
-        try { ctx.filter = "blur(40px) brightness(0.75)"; } catch (e) {}
-        drawCover(ctx, v, W, H, 1.12);
-        ctx.restore();
-        drawContain(ctx, v, W, H);
-        const seg = state.segments.find((s) => t >= s.start && t < s.end);
-        if (seg && seg.text.trim()) drawSubtitle(ctx, seg.text.trim(), W, H);
-        setStatus(els.exportStatus, "録画中… " + Math.min(t - start, end - start).toFixed(1) + " / " + (end - start).toFixed(1) + " 秒");
-        if (t >= end || v.ended) { res(); return; }
-        requestAnimationFrame(tick);
-      };
-      tick();
-    });
+    for (let i = 0; i < ranges.length; i++) {
+      curRange = ranges[i];
+      if (i > 0) {
+        await seekTo(v, curRange.start);
+        await v.play();
+      }
+      await new Promise((res) => {
+        const tick = () => {
+          drawFrame();
+          if (v.currentTime >= curRange.end || v.ended) { res(); return; }
+          requestAnimationFrame(tick);
+        };
+        tick();
+      });
+      outElapsed += (curRange.end - curRange.start);
+    }
     v.pause();
     rec.stop();
     await stopped;
@@ -661,10 +697,11 @@ els.exportBtn.addEventListener("click", async () => {
     console.error(e);
     setStatus(els.exportStatus, "書き出しでエラーが起きました：" + (e && e.message ? e.message : e), "warn");
   } finally {
-    els.exportBtn.disabled = false;
+    updateActionButtons();
   }
 });
 
+renderRanges();
 renderEditList();
 </script>
 </body>
