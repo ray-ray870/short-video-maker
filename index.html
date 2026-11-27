@@ -110,7 +110,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v14）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v15）</p>
 </header>
 
 <div class="wrap">
@@ -799,7 +799,7 @@ async function exportWithWebCodecs(v, ranges, totalDur, mode) {
     if (!v.requestVideoFrameCallback) throw new Error("realtime capture unsupported");
     await new Promise((resolve, reject) => {
       let rangeIdx = 0, outOffset = 0, frameCount = 0, done = false;
-      let lastMedia = -1, lastAdvanceAt = performance.now(), lastEncodedMt = -1;
+      let lastMedia = -1, lastAdvanceAt = performance.now(), lastEncodedMt = -1, lastTs = -1;
       const finish = (err) => {
         if (done) return;
         done = true;
@@ -828,8 +828,11 @@ async function exportWithWebCodecs(v, ranges, totalDur, mode) {
         if (mt >= r.start - 0.05 && mt < r.end && mt !== lastEncodedMt && videoEncoder.encodeQueueSize <= 10) {
           lastEncodedMt = mt;
           composeFrame(fctx, W, H, bgCtx, bgCanvas, v, mt);
+          let ts = Math.round((outOffset + (mt - r.start)) * 1000000);
+          if (ts <= lastTs) ts = lastTs + 1;
+          lastTs = ts;
           const vf = new VideoFrame(fresh, {
-            timestamp: Math.max(0, Math.round((outOffset + (mt - r.start)) * 1000000)),
+            timestamp: Math.max(0, ts),
             duration: 33333,
           });
           videoEncoder.encode(vf, { keyFrame: frameCount % 60 === 0 });
@@ -959,12 +962,16 @@ els.exportBtn.addEventListener("click", async () => {
     // まず、再生に頼らない方式（WebCodecs）で試す。対応していない・失敗した場合は従来の録画方式に切り替える
     let wcBlob = null;
     if (clean && typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
-      try { wcBlob = await exportWithWebCodecs(v, ranges, totalDur, "realtime"); }
-      catch (e) {
-        console.error(e); wcBlob = null;
-        setStatus(els.exportStatus, "別の方式で書き出し直します…");
-        try { wcBlob = await exportWithWebCodecs(v, ranges, totalDur, "step"); }
-        catch (e2) { console.error(e2); wcBlob = null; }
+      const modes = ["realtime", "realtime", "step"];
+      for (let mi = 0; mi < modes.length && !wcBlob; mi++) {
+        try { wcBlob = await exportWithWebCodecs(v, ranges, totalDur, modes[mi]); }
+        catch (e) {
+          console.error(e); wcBlob = null;
+          if (mi < modes.length - 1) {
+            setStatus(els.exportStatus, "別の方式で書き出し直します（理由：" + (e && e.message ? e.message : e) + "）");
+            await new Promise((r) => setTimeout(r, 600));
+          }
+        }
       }
     }
     let drawFrame = null;
