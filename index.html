@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ショート動画メーカー（試作品）</title>
+<style>
+  :root{
+    --bg:#f4f4f7; --card:#ffffff; --ink:#1d1d22; --sub:#5a5a66;
+    --accent:#e8362a; --accent-ink:#ffffff; --line:#e2e2ea;
+    --ok:#0a7d3b; --warn:#9a6a00;
+  }
+  *{ box-sizing:border-box; }
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+    font-size:16px; line-height:1.6;
+  }
+  header{
+    background:#191920; color:#fff; padding:18px 16px 14px;
+  }
+  header h1{ margin:0; font-size:22px; line-height:1.3; }
+  header p{ margin:6px 0 0; font-size:14px; color:#c9c9d4; }
+  .wrap{ max-width:1180px; margin:0 auto; padding:14px 12px 40px; }
+  .layout{ display:flex; flex-direction:column; gap:14px; }
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:16px 14px; box-shadow:0 1px 3px rgba(0,0,0,.05);
+  }
+  .card h2{ margin:0 0 10px; font-size:18px; line-height:1.4; }
+  .card h2 .step{
+    display:inline-block; background:var(--accent); color:#fff; border-radius:999px;
+    min-width:28px; height:28px; line-height:28px; text-align:center; font-size:15px;
+    margin-right:8px; vertical-align:2px; padding:0 6px;
+  }
+  .hint{ color:var(--sub); font-size:14px; margin:6px 0 0; }
+  /* タップしやすいボタン・入力欄（高さ48px以上、文字16px以上で自動ズーム防止） */
+  button{
+    display:block; width:100%; min-height:52px; padding:12px 16px;
+    font-size:17px; font-weight:700; border-radius:12px; border:0; cursor:pointer;
+    background:var(--accent); color:var(--accent-ink);
+  }
+  button.secondary{ background:#2f2f38; }
+  button:disabled{ background:#b9b9c4; cursor:not-allowed; }
+  input[type="text"], input[type="number"], textarea{
+    width:100%; min-height:48px; padding:10px 12px; font-size:16px;
+    border:1.5px solid #c6c6d2; border-radius:10px; background:#fff; color:var(--ink);
+  }
+  textarea{ min-height:56px; resize:vertical; line-height:1.5; }
+  label{ display:block; font-weight:700; font-size:15px; margin:12px 0 6px; }
+  label:first-of-type{ margin-top:0; }
+  .row{ display:flex; gap:10px; }
+  .row > div{ flex:1; }
+  .file-btn{
+    display:flex; align-items:center; justify-content:center;
+    min-height:56px; padding:12px; border-radius:12px; cursor:pointer;
+    background:#2f2f38; color:#fff; font-size:17px; font-weight:700; text-align:center;
+  }
+  input[type="file"]{ position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; }
+  /* 9:16 プレビュー（画面に収まるサイズ） */
+  .preview-box{
+    width:min(100%, 380px); margin:4px auto 0; aspect-ratio:9/16;
+    max-height:62dvh; background:#000; border-radius:12px; overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .preview-box video, .preview-box canvas{
+    width:100%; height:100%; object-fit:contain; display:block; background:#000;
+  }
+  .preview-cap{ text-align:center; color:var(--sub); font-size:13px; margin-top:6px; }
+  .status{ font-size:15px; margin-top:10px; min-height:1.4em; white-space:pre-wrap; }
+  .status.ok{ color:var(--ok); } .status.warn{ color:var(--warn); }
+  progress{ width:100%; height:14px; margin-top:8px; display:none; }
+  .seg-list{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .seg{
+    border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:#fbfbfc;
+  }
+  .seg .time{ font-size:13px; color:var(--sub); font-variant-numeric:tabular-nums; }
+  .seg .text{ font-size:16px; }
+  .seg textarea{ margin-top:4px; }
+  .seg.in-range{ border-color:var(--accent); background:#fff7f6; }
+  .notes{ font-size:14px; color:var(--sub); }
+  .notes li{ margin:4px 0; }
+  a.download{
+    display:flex; align-items:center; justify-content:center; min-height:52px;
+    background:var(--ok); color:#fff; border-radius:12px; font-size:17px; font-weight:700;
+    text-decoration:none; padding:12px 16px; margin-top:10px;
+  }
+  .hidden-video{ position:absolute; left:-9999px; top:0; width:2px; height:2px; opacity:0.01; }
+  /* 広い画面（タブレット・PC）：プレビュー左＋操作右の2カラム */
+  @media (min-width: 900px){
+    .wrap{ padding:20px 20px 48px; }
+    .layout{ display:grid; grid-template-columns:minmax(320px,400px) 1fr; gap:20px; align-items:start; }
+    .col-preview{ position:sticky; top:20px; }
+    .preview-box{ max-height:78dvh; }
+    header h1{ font-size:26px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 ショート動画メーカー（試作品）</h1>
+  <p>動画を入れて、切り取りたいセリフを書くだけ。字幕つき縦型ショートを自動で作ります。</p>
+</header>
+
+<div class="wrap">
+  <div class="layout">
+    <!-- 左カラム（スマホでは上）：プレビュー -->
+    <div class="col-preview">
+      <section class="card">
+        <h2>プレビュー</h2>
+        <div class="preview-box">
+          <video id="srcVideo" controls playsinline muted></video>
+        </div>
+        <p class="preview-cap">選んだ動画（音は書き出し時に元の音声を使います）</p>
+        <div class="preview-box" id="canvasBox" style="display:none; margin-top:12px;">
+          <canvas id="outCanvas" width="1080" height="1920"></canvas>
+        </div>
+        <p class="preview-cap" id="canvasCap" style="display:none;">書き出し中の映像</p>
+      </section>
+
+      <section class="card" id="resultCard" style="display:none;">
+        <h2>✅ 完成！</h2>
+        <div class="preview-box">
+          <video id="resultVideo" controls playsinline></video>
+        </div>
+        <p class="status" id="mimeInfo"></p>
+        <a class="download" id="downloadLink" href="#" download="short-video.mp4">⬇ ダウンロードする</a>
+      </section>
+    </div>
+
+    <!-- 右カラム（スマホでは下）：操作パネル -->
+    <div class="col-main">
+      <section class="card">
+        <h2><span class="step">1</span>動画を選ぶ</h2>
+        <label class="file-btn" for="fileInput">📁 動画ファイルを選ぶ</label>
+        <input type="file" id="fileInput" accept="video/*">
+        <p class="hint" id="fileName">まだ選ばれていません</p>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">2</span>文字起こし</h2>
+        <button id="transcribeBtn" disabled>🎙 文字起こしする</button>
+        <progress id="asrProgress" max="100" value="0"></progress>
+        <p class="status" id="asrStatus">動画を選ぶと押せるようになります。初回は音声認識モデルのダウンロードで数分かかることがあります。</p>
+        <div class="seg-list" id="segList"></div>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">3</span>切り抜き範囲を決める</h2>
+        <label for="phraseInput">切り取りたいセリフ</label>
+        <input type="text" id="phraseInput" placeholder="例：貯金は安心材料">
+        <div class="row">
+          <div>
+            <label for="padBefore">前（秒）</label>
+            <input type="number" id="padBefore" value="8" min="0" step="1" inputmode="decimal">
+          </div>
+          <div>
+            <label for="padAfter">後（秒）</label>
+            <input type="number" id="padAfter" value="14" min="0" step="1" inputmode="decimal">
+          </div>
+          <div>
+            <label for="maxDur">最大（秒）</label>
+            <input type="number" id="maxDur" value="30" min="5" step="1" inputmode="decimal">
+          </div>
+        </div>
+        <button id="decideBtn" style="margin-top:14px;" disabled>✂ 切り抜き範囲を決める</button>
+        <p class="status" id="cutStatus">範囲は文の切れ目（セグメント境界）に合わせて決まります。</p>
+        <div class="row">
+          <div>
+            <label for="cutStart">開始（秒）</label>
+            <input type="number" id="cutStart" value="0" min="0" step="0.1" inputmode="decimal">
+          </div>
+          <div>
+            <label for="cutEnd">終了（秒）</label>
+            <input type="number" id="cutEnd" value="0" min="0" step="0.1" inputmode="decimal">
+          </div>
+        </div>
+        <p class="hint">開始・終了は手で直すこともできます。</p>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">4</span>字幕を直す</h2>
+        <p class="hint">切り抜き範囲の中の字幕です。タップすると、その場で文字を直せます（誤字の修正用）。直した内容が書き出しに反映されます。</p>
+        <div class="seg-list" id="editList"></div>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">5</span>ショート動画を作る</h2>
+        <button id="exportBtn" disabled>🎥 ショート動画を作る</button>
+        <p class="status" id="exportStatus">再生しながら録画する方式なので、30秒の動画なら約30秒かかります。録画中は画面を閉じないでください。</p>
+      </section>
+
+      <section class="card">
+        <h2>⚠ 知っておいてほしいこと</h2>
+        <ul class="notes">
+          <li>処理は<strong>この端末の中だけ</strong>で行われます。動画が外部のサーバーに送られることはありません。</li>
+          <li>初回の文字起こしは、音声認識モデル（約250MB）のダウンロードで数分かかることがあります。Wi-Fi推奨です。</li>
+          <li>長い動画の文字起こしは重い処理です。長い動画はパソコン推奨、スマホでは短い動画でお試しください。</li>
+          <li>字幕の自動文字起こしには誤字が出ることがあります。ステップ4で直してから書き出してください。</li>
+          <li>書き出し形式は端末・ブラウザによって変わります（mp4 または webm）。</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- 書き出し用の隠し動画要素 -->
+<video id="exportVideo" class="hidden-video" playsinline></video>
+
+<script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const els = {
+  fileInput: $("fileInput"), fileName: $("fileName"), srcVideo: $("srcVideo"),
+  transcribeBtn: $("transcribeBtn"), asrProgress: $("asrProgress"), asrStatus: $("asrStatus"),
+  segList: $("segList"), phraseInput: $("phraseInput"),
+  padBefore: $("padBefore"), padAfter: $("padAfter"), maxDur: $("maxDur"),
+  decideBtn: $("decideBtn"), cutStatus: $("cutStatus"),
+  cutStart: $("cutStart"), cutEnd: $("cutEnd"),
+  editList: $("editList"), exportBtn: $("exportBtn"), exportStatus: $("exportStatus"),
+  canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
+  resultCard: $("resultCard"), resultVideo: $("resultVideo"),
+  mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"),
+  exportVideo: $("exportVideo"),
+};
+const state = {
+  file: null, url: null, segments: [], transcriber: null,
+  audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
+};
+const fmt = (s) => {
+  s = Math.max(0, s || 0);
+  const m = Math.floor(s / 60), ss = (s % 60).toFixed(1).padStart(4, "0");
+  return m + ":" + ss;
+};
+function setStatus(el, msg, cls) {
+  el.textContent = msg;
+  el.className = "status" + (cls ? " " + cls : "");
+}
+
+/* ---------- 1. ファイル選択 ---------- */
+els.fileInput.addEventListener("change", () => {
+  const f = els.fileInput.files && els.fileInput.files[0];
+  if (!f) return;
+  if (state.url) URL.revokeObjectURL(state.url);
+  state.file = f;
+  state.url = URL.createObjectURL(f);
+  state.segments = [];
+  els.srcVideo.src = state.url;
+  els.exportVideo.src = state.url;
+  els.fileName.textContent = "選択中：" + f.name;
+  els.transcribeBtn.disabled = false;
+  els.decideBtn.disabled = true;
+  els.exportBtn.disabled = true;
+  els.segList.innerHTML = "";
+  els.editList.innerHTML = "";
+  els.resultCard.style.display = "none";
+  setStatus(els.asrStatus, "「文字起こしする」を押してください。初回はモデルのダウンロードで数分かかることがあります。");
+});
+
+/* ---------- 2. 文字起こし ---------- */
+async function decodeAudioTo16kMono(file) {
+  const buf = await file.arrayBuffer();
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC({ sampleRate: 16000 });
+  try {
+    const audioBuf = await ctx.decodeAudioData(buf);
+    const n = audioBuf.length, chs = audioBuf.numberOfChannels;
+    const mono = new Float32Array(n);
+    for (let ch = 0; ch < chs; ch++) {
+      const d = audioBuf.getChannelData(ch);
+      for (let i = 0; i < n; i++) mono[i] += d[i] / chs;
+    }
+    return mono;
+  } finally { ctx.close(); }
+}
+
+els.transcribeBtn.addEventListener("click", async () => {
+  if (!state.file) return;
+  const T = window.Transformers;
+  if (!T) {
+    setStatus(els.asrStatus, "文字起こしライブラリを読み込めませんでした。通信環境を確認して、ページを再読み込みしてください。", "warn");
+    return;
+  }
+  els.transcribeBtn.disabled = true;
+  els.asrProgress.style.display = "block";
+  els.asrProgress.value = 0;
+  try {
+    if (!state.transcriber) {
+      T.env.allowLocalModels = false;
+      setStatus(els.asrStatus, "音声認識モデルを準備しています…（初回はダウンロードで数分かかることがあります）");
+      state.transcriber = await T.pipeline("automatic-speech-recognition", "Xenova/whisper-small", {
+        quantized: true,
+        progress_callback: (p) => {
+          if (p && p.status === "progress" && typeof p.progress === "number") {
+            els.asrProgress.value = p.progress;
+            setStatus(els.asrStatus, "モデルをダウンロード中：" + (p.file || "") + " " + Math.round(p.progress) + "%");
+          } else if (p && p.status === "ready") {
+            setStatus(els.asrStatus, "モデルの準備ができました。文字起こしを始めます…");
+          }
+        },
+      });
+    }
+    setStatus(els.asrStatus, "音声を読み込んでいます…");
+    const audio = await decodeAudioTo16kMono(state.file);
+    setStatus(els.asrStatus, "文字起こし中です…（動画の長さによっては時間がかかります）");
+    const out = await state.transcriber(audio, {
+      language: "japanese", task: "transcribe",
+      return_timestamps: true, chunk_length_s: 30, stride_length_s: 5,
+    });
+    const chunks = (out && out.chunks) ? out.chunks : [];
+    state.segments = chunks
+      .map((c) => ({
+        start: (c.timestamp && typeof c.timestamp[0] === "number") ? c.timestamp[0] : 0,
+        end: (c.timestamp && typeof c.timestamp[1] === "number") ? c.timestamp[1] : 0,
+        text: (c.text || "").trim(),
+      }))
+      .filter((s) => s.text.length > 0);
+    if (state.segments.length === 0) {
+      setStatus(els.asrStatus, "セリフを検出できませんでした。音声のある動画でお試しください。", "warn");
+    } else {
+      setStatus(els.asrStatus, "文字起こし完了：" + state.segments.length + " 件のセリフが見つかりました。", "ok");
+      els.decideBtn.disabled = false;
+      if (state.segments.length) {
+        els.cutEnd.value = Math.min(30, state.segments[state.segments.length - 1].end).toFixed(1);
+      }
+      els.exportBtn.disabled = false;
+    }
+    renderSegList();
+    renderEditList();
+  } catch (e) {
+    console.error(e);
+    setStatus(els.asrStatus, "文字起こしでエラーが起きました：" + (e && e.message ? e.message : e), "warn");
+  } finally {
+    els.asrProgress.style.display = "none";
+    els.transcribeBtn.disabled = false;
+  }
+});
+
+function renderSegList() {
+  els.segList.innerHTML = "";
+  state.segments.forEach((s) => {
+    const div = document.createElement("div");
+    div.className = "seg";
+    const t = document.createElement("div");
+    t.className = "time"; t.textContent = fmt(s.start) + " 〜 " + fmt(s.end);
+    const tx = document.createElement("div");
+    tx.className = "text"; tx.textContent = s.text;
+    div.appendChild(t); div.appendChild(tx);
+    els.segList.appendChild(div);
+  });
+}
+
+/* ---------- 3. 切り抜き範囲 ---------- */
+function normalizeText(s) {
+  return (s || "").replace(/[\s、。，．,.!！?？・「」『』（）()【】\[\]〜~…:：;；'"’“”]/g, "");
+}
+els.decideBtn.addEventListener("click", () => {
+  const phrase = normalizeText(els.phraseInput.value);
+  if (!phrase) { setStatus(els.cutStatus, "セリフを入力してください。", "warn"); return; }
+  if (!state.segments.length) { setStatus(els.cutStatus, "先に文字起こしをしてください。", "warn"); return; }
+  // セグメント本文を連結し、文字ごとにセグメント番号を対応づける
+  let concat = ""; const map = [];
+  state.segments.forEach((s, idx) => {
+    const n = normalizeText(s.text);
+    for (const ch of n) { concat += ch; map.push(idx); }
+  });
+  const pos = concat.indexOf(phrase);
+  if (pos < 0) {
+    setStatus(els.cutStatus, "そのセリフは見つかりませんでした。文字起こし結果の表記と合っているか確認してください。", "warn");
+    return;
+  }
+  const firstSeg = map[pos], lastSeg = map[pos + phrase.length - 1];
+  const pStart = state.segments[firstSeg].start;
+  const pEnd = state.segments[lastSeg].end;
+  const padB = Math.max(0, parseFloat(els.padBefore.value) || 0);
+  const padA = Math.max(0, parseFloat(els.padAfter.value) || 0);
+  const maxD = Math.max(5, parseFloat(els.maxDur.value) || 30);
+  const rawStart = Math.max(0, pStart - padB);
+  const rawEnd = pEnd + padA;
+  // セグメント境界（文の切れ目）にスナップ
+  let si = 0;
+  state.segments.forEach((s, i) => { if (s.start <= rawStart) si = i; });
+  if (si > firstSeg) si = firstSeg;
+  let ei = state.segments.length - 1;
+  for (let i = 0; i < state.segments.length; i++) {
+    if (state.segments[i].end >= rawEnd) { ei = i; break; }
+  }
+  if (ei < lastSeg) ei = lastSeg;
+  // 最大秒数を超える場合は、セリフから遠い側の境界を1つずつ詰める
+  let guard = 0;
+  while (state.segments[ei].end - state.segments[si].start > maxD && guard++ < 500) {
+    const dStart = pStart - state.segments[si].start;
+    const dEnd = state.segments[ei].end - pEnd;
+    if (dStart >= dEnd && si < firstSeg) si++;
+    else if (ei > lastSeg) ei--;
+    else if (si < firstSeg) si++;
+    else break;
+  }
+  const cutStart = state.segments[si].start;
+  const cutEnd = state.segments[ei].end;
+  els.cutStart.value = cutStart.toFixed(1);
+  els.cutEnd.value = cutEnd.toFixed(1);
+  setStatus(els.cutStatus,
+    "範囲を決めました：" + fmt(cutStart) + " 〜 " + fmt(cutEnd) + "（" + (cutEnd - cutStart).toFixed(1) + "秒）", "ok");
+  renderEditList();
+});
+
+/* ---------- 4. 字幕編集 ---------- */
+function currentRange() {
+  const a = parseFloat(els.cutStart.value) || 0;
+  const b = parseFloat(els.cutEnd.value) || 0;
+  return [Math.min(a, b), Math.max(a, b)];
+}
+function renderEditList() {
+  els.editList.innerHTML = "";
+  if (!state.segments.length) {
+    els.editList.innerHTML = '<p class="hint">文字起こしをすると、ここに字幕が出ます。</p>';
+    return;
+  }
+  const [rs, re] = currentRange();
+  let shown = 0;
+  state.segments.forEach((s, idx) => {
+    if (s.end <= rs || s.start >= re) return;
+    shown++;
+    const div = document.createElement("div");
+    div.className = "seg in-range";
+    const t = document.createElement("div");
+    t.className = "time"; t.textContent = fmt(s.start) + " 〜 " + fmt(s.end) + "（タップで編集）";
+    const ta = document.createElement("textarea");
+    ta.value = s.text; ta.rows = 2; ta.setAttribute("aria-label", "字幕 " + (idx + 1));
+    ta.addEventListener("input", () => { state.segments[idx].text = ta.value; });
+    div.appendChild(t); div.appendChild(ta);
+    els.editList.appendChild(div);
+  });
+  if (!shown) els.editList.innerHTML = '<p class="hint">この範囲には字幕がありません。範囲を広げてみてください。</p>';
+}
+els.cutStart.addEventListener("change", renderEditList);
+els.cutEnd.addEventListener("change", renderEditList);
+
+/* ---------- 5. 書き出し（Canvas + MediaRecorder） ---------- */
+function highlightFlags(text) {
+  const flags = new Array(text.length).fill(false);
+  const mark = (re) => {
+    let m; re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      for (let i = m.index; i < m.index + m[0].length && i < flags.length; i++) flags[i] = true;
+      if (m[0].length === 0) re.lastIndex++;
+    }
+  };
+  mark(/「[^」]+」/g);
+  mark(/[0-9０-９]+(?:[.,][0-9０-９]+)?\s*(?:％|%|円|倍|人|年|位|割|秒)/g);
+  return flags;
+}
+function drawCover(ctx, v, W, H, scaleMul) {
+  const vw = v.videoWidth, vh = v.videoHeight;
+  if (!vw || !vh) return;
+  const scale = Math.max(W / vw, H / vh) * (scaleMul || 1);
+  const w = vw * scale, h = vh * scale;
+  ctx.drawImage(v, (W - w) / 2, (H - h) / 2, w, h);
+}
+function drawContain(ctx, v, W, H) {
+  const vw = v.videoWidth, vh = v.videoHeight;
+  if (!vw || !vh) return;
+  const scale = Math.min(W / vw, H / vh);
+  const w = vw * scale, h = vh * scale;
+  ctx.drawImage(v, (W - w) / 2, (H - h) / 2, w, h);
+}
+function drawSubtitle(ctx, text, W, H) {
+  const flags = highlightFlags(text);
+  ctx.font = '900 84px "Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif';
+  ctx.textBaseline = "alphabetic";
+  ctx.lineJoin = "round";
+  // 折り返し（文字単位、最大幅 980px）
+  const maxW = 980, lines = [];
+  let line = "";
+  for (let i = 0; i < text.length; i++) {
+    const test = line + text[i];
+    if (ctx.measureText(test).width > maxW && line.length > 0) { lines.push(line); line = text[i]; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  const lineH = 106, bottom = H - 280;
+  lines.forEach((ln, li) => {
+    const y = bottom - (lines.length - 1 - li) * lineH;
+    // 行を強調フラグごとの run に分ける
+    const baseIdx = lines.slice(0, li).join("").length;
+    const runs = [];
+    let cur = null;
+    for (let i = 0; i < ln.length; i++) {
+      const f = flags[baseIdx + i];
+      if (!cur || cur.hl !== f) { cur = { t: ln[i], hl: f }; runs.push(cur); }
+      else cur.t += ln[i];
+    }
+    const totalW = ctx.measureText(ln).width;
+    let x = (W - totalW) / 2;
+    runs.forEach((r) => {
+      ctx.strokeStyle = "#000"; ctx.lineWidth = 16;
+      ctx.strokeText(r.t, x, y);
+      ctx.fillStyle = r.hl ? "#FFE600" : "#FFFFFF";
+      ctx.fillText(r.t, x, y);
+      x += ctx.measureText(r.t).width;
+    });
+  });
+}
+function pickMimeType() {
+  if (!window.MediaRecorder) return "";
+  const cands = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+  for (const c of cands) { try { if (MediaRecorder.isTypeSupported(c)) return c; } catch (e) {} }
+  return "";
+}
+
+els.exportBtn.addEventListener("click", async () => {
+  if (!state.url) { setStatus(els.exportStatus, "先に動画を選んでください。", "warn"); return; }
+  const [start, end] = currentRange();
+  if (!(end > start)) { setStatus(els.exportStatus, "開始・終了の範囲が正しくありません。", "warn"); return; }
+  const v = els.exportVideo;
+  const canvas = els.outCanvas, ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  els.exportBtn.disabled = true;
+  els.canvasBox.style.display = "flex";
+  els.canvasCap.style.display = "block";
+  try {
+    // 音声の取り出し（AudioContext はユーザー操作の中で作る）
+    if (!state.audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      state.audioCtx = new AC();
+      state.mediaSource = state.audioCtx.createMediaElementSource(v);
+      state.audioDest = state.audioCtx.createMediaStreamDestination();
+      state.mediaSource.connect(state.audioDest);
+      state.mediaSource.connect(state.audioCtx.destination);
+    }
+    if (state.audioCtx.state === "suspended") await state.audioCtx.resume();
+
+    const mime = pickMimeType();
+    const canvasStream = canvas.captureStream(30);
+    const tracks = [...canvasStream.getVideoTracks(), ...state.audioDest.stream.getAudioTracks()];
+    const rec = new MediaRecorder(new MediaStream(tracks),
+      mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : { videoBitsPerSecond: 8000000 });
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise((res) => { rec.onstop = res; });
+
+    await new Promise((res, rej) => {
+      const onSeeked = () => { v.removeEventListener("seeked", onSeeked); res(); };
+      v.addEventListener("seeked", onSeeked);
+      v.onerror = () => rej(new Error("動画を読み込めませんでした"));
+      v.currentTime = start;
+    });
+    await v.play();
+    rec.start(200);
+    setStatus(els.exportStatus, "録画中… 0.0 / " + (end - start).toFixed(1) + " 秒");
+
+    await new Promise((res) => {
+      const tick = () => {
+        const t = v.currentTime;
+        // 背景：ぼかし（filter 非対応環境では暗くした拡大映像）＋前景フィット
+        ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+        ctx.save();
+        try { ctx.filter = "blur(40px) brightness(0.75)"; } catch (e) {}
+        drawCover(ctx, v, W, H, 1.12);
+        ctx.restore();
+        drawContain(ctx, v, W, H);
+        const seg = state.segments.find((s) => t >= s.start && t < s.end);
+        if (seg && seg.text.trim()) drawSubtitle(ctx, seg.text.trim(), W, H);
+        setStatus(els.exportStatus, "録画中… " + Math.min(t - start, end - start).toFixed(1) + " / " + (end - start).toFixed(1) + " 秒");
+        if (t >= end || v.ended) { res(); return; }
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
+    v.pause();
+    rec.stop();
+    await stopped;
+    const type = rec.mimeType || mime || "video/webm";
+    const blob = new Blob(chunks, { type });
+    if (state.resultUrl) URL.revokeObjectURL(state.resultUrl);
+    state.resultUrl = URL.createObjectURL(blob);
+    els.resultVideo.src = state.resultUrl;
+    const isMp4 = type.indexOf("mp4") >= 0;
+    els.downloadLink.href = state.resultUrl;
+    els.downloadLink.setAttribute("download", isMp4 ? "short-video.mp4" : "short-video.webm");
+    els.mimeInfo.textContent = "形式：" + type + " ／ サイズ：" + (blob.size / 1024 / 1024).toFixed(1) + " MB";
+    els.resultCard.style.display = "block";
+    setStatus(els.exportStatus, "書き出しが終わりました。下のプレビューで確認して、ダウンロードしてください。", "ok");
+    els.resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    console.error(e);
+    setStatus(els.exportStatus, "書き出しでエラーが起きました：" + (e && e.message ? e.message : e), "warn");
+  } finally {
+    els.exportBtn.disabled = false;
+  }
+});
+
+renderEditList();
+</script>
+</body>
+</html>
