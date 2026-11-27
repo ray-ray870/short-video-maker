@@ -88,7 +88,9 @@
     border:2px solid var(--line); background:#fff; color:var(--ink);
     border-radius:999px; padding:6px 12px; font-size:15px; cursor:pointer;
   }
-  .chip.on{ background:#ffd83d; border-color:#e0a800; font-weight:700; }
+  .chip.c-blue{ background:#33b5ff; border-color:#1a7fc1; color:#fff; font-weight:700; }
+  .chip.c-yellow{ background:#ffd83d; border-color:#e0a800; font-weight:700; }
+  .chip.c-red{ background:#ff5252; border-color:#c62828; color:#fff; font-weight:700; }
   .seg.in-range{ border-color:var(--accent); background:#fff7f6; }
   .range-item{
     display:flex; align-items:center; gap:10px;
@@ -116,7 +118,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v19）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v20）</p>
 </header>
 
 <div class="wrap">
@@ -526,24 +528,27 @@ function renderSegList() {
     ta.addEventListener("input", () => { state.segments[idx].text = ta.value; });
     ta.addEventListener("change", () => renderSegList());
     div.appendChild(t); div.appendChild(ta);
-    // 色付け：文節ごとにタップして黄色くする（数字と「」は自動で黄色）
+    // 色付け：文節をタップするたびに 青→黄色→赤→解除 と切り替わる（数字と「」は自動で黄色）
     const chunks = splitChunks(s.text);
     if (chunks.length > 1) {
       const hint = document.createElement("div");
       hint.className = "time";
-      hint.textContent = "色付けしたい言葉をタップ（数字と「」は自動で黄色）";
+      hint.textContent = "色付けしたい言葉をタップ（青→黄色→赤→解除）";
       div.appendChild(hint);
       const row = document.createElement("div");
       row.className = "chip-row";
-      if (!Array.isArray(s.hl)) s.hl = [];
+      if (!s.marks || typeof s.marks !== "object") s.marks = {};
+      const cycle = [null, "blue", "yellow", "red"];
       chunks.forEach((c) => {
+        const cur = s.marks[c] || null;
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "chip" + (s.hl.indexOf(c) >= 0 ? " on" : "");
+        b.className = "chip" + (cur ? " c-" + cur : "");
         b.textContent = c;
         b.addEventListener("click", () => {
-          const i = s.hl.indexOf(c);
-          if (i >= 0) s.hl.splice(i, 1); else s.hl.push(c);
+          const now = s.marks[c] || null;
+          const next = cycle[(cycle.indexOf(now) + 1) % cycle.length];
+          if (next) s.marks[c] = next; else delete s.marks[c];
           renderSegList();
         });
         row.appendChild(b);
@@ -555,24 +560,27 @@ function renderSegList() {
 }
 
 /* ---------- 5. 書き出し（Canvas + MediaRecorder、複数範囲をつなぐ） ---------- */
-function highlightFlags(text, phrases) {
-  const flags = new Array(text.length).fill(false);
+const HL_CODES = { blue: 1, yellow: 2, red: 3 };
+const HL_FILL = ["#FFFFFF", "#33B5FF", "#FFE600", "#FF5252"];
+function highlightFlags(text, marks) {
+  const flags = new Array(text.length).fill(0);
   const mark = (re) => {
     let m; re.lastIndex = 0;
     while ((m = re.exec(text)) !== null) {
-      for (let i = m.index; i < m.index + m[0].length && i < flags.length; i++) flags[i] = true;
+      for (let i = m.index; i < m.index + m[0].length && i < flags.length; i++) flags[i] = 2;
       if (m[0].length === 0) re.lastIndex++;
     }
   };
   mark(/「[^」]+」/g);
   mark(/[0-9０-９]+(?:[.,][0-9０-９]+)?\s*(?:％|%|円|倍|人|年|位|割|秒)/g);
-  (phrases || []).forEach((p) => {
-    if (!p) return;
+  Object.keys(marks || {}).forEach((p) => {
+    const code = HL_CODES[marks[p]] || 0;
+    if (!p || !code) return;
     let at = 0;
     while (true) {
       const i = text.indexOf(p, at);
       if (i < 0) break;
-      for (let k = i; k < i + p.length && k < flags.length; k++) flags[k] = true;
+      for (let k = i; k < i + p.length && k < flags.length; k++) flags[k] = code;
       at = i + p.length;
     }
   });
@@ -595,8 +603,8 @@ function drawContain(ctx, v, W, H) {
   const w = vw * scale, h = vh * scale;
   ctx.drawImage(v, (W - w) / 2, (H - h) / 2, w, h);
 }
-function drawSubtitle(ctx, text, W, H, phrases) {
-  const flags = highlightFlags(text, phrases);
+function drawSubtitle(ctx, text, W, H, marks) {
+  const flags = highlightFlags(text, marks);
   const sc = W / 1080;
   ctx.font = "900 " + Math.round(84 * sc) + 'px "Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif';
   ctx.textBaseline = "alphabetic";
@@ -625,7 +633,7 @@ function drawSubtitle(ctx, text, W, H, phrases) {
     runs.forEach((r) => {
       ctx.strokeStyle = "#000"; ctx.lineWidth = 16 * sc;
       ctx.strokeText(r.t, x, y);
-      ctx.fillStyle = r.hl ? "#FFE600" : "#FFFFFF";
+      ctx.fillStyle = HL_FILL[r.hl] || "#FFFFFF";
       ctx.fillText(r.t, x, y);
       x += ctx.measureText(r.t).width;
     });
@@ -803,7 +811,7 @@ function composeFrame(fctx, W2, H2, bgCtx, bgCanvas, v, t) {
   fctx.drawImage(bgCanvas, 0, 0, W2, H2);
   drawContain(fctx, v, W2, H2);
   const seg = state.segments.find((s) => t >= s.start && t < s.end);
-  if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.hl || []);
+  if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.marks || {});
 }
 
 /* WebCodecs書き出し。mode="realtime"：再生しながら取り込む（速い）。mode="step"：1コマずつ止めて取り込む（確実） */
@@ -1072,7 +1080,7 @@ els.exportBtn.addEventListener("click", async () => {
         fctx.drawImage(bgCanvas, 0, 0, W2, H2);
         drawContain(fctx, v, W2, H2);
         const seg = state.segments.find((s) => t >= s.start && t < s.end);
-        if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.hl || []);
+        if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.marks || {});
         progressOnly();
       };
       const canvasStream = fresh.captureStream(30);
