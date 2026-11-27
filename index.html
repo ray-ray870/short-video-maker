@@ -208,7 +208,7 @@
 <!-- 書き出し用の隠し動画要素 -->
 <video id="exportVideo" class="hidden-video" playsinline></video>
 
-<script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"></script>
+
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
@@ -278,10 +278,17 @@ async function decodeAudioTo16kMono(file) {
 
 els.transcribeBtn.addEventListener("click", async () => {
   if (!state.file) return;
-  const T = window.Transformers;
+  let T = state.transformersLib;
   if (!T) {
-    setStatus(els.asrStatus, "文字起こしライブラリを読み込めませんでした。通信環境を確認して、ページを再読み込みしてください。", "warn");
-    return;
+    try {
+      setStatus(els.asrStatus, "文字起こしライブラリを読み込んでいます…");
+      T = await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js");
+      state.transformersLib = T;
+    } catch (e) {
+      console.error(e);
+      setStatus(els.asrStatus, "文字起こしライブラリを読み込めませんでした。通信環境を確認して、ページを再読み込みしてください。", "warn");
+      return;
+    }
   }
   els.transcribeBtn.disabled = true;
   els.asrProgress.style.display = "block";
