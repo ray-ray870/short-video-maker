@@ -110,7 +110,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v10）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v11）</p>
 </header>
 
 <div class="wrap">
@@ -776,8 +776,11 @@ els.exportBtn.addEventListener("click", async () => {
     const clean = await testCanvasClean(v);
     let drawFrame = null;
     if (clean) {
-      const graph = ensureAudioGraph(v);
-      if (state.audioCtx.state === "suspended") await state.audioCtx.resume();
+      // 音声は動画そのもののストリームから取る（Web Audio経由はAndroidで再生が止まることがあるため使わない）
+      const elemCapture = v.captureStream || v.mozCaptureStream;
+      if (!elemCapture) throw new Error("この端末では音声を取り込めませんでした");
+      const elemStream = elemCapture.call(v);
+      const audioTracks = elemStream.getAudioTracks();
       // 前回の書き出しで汚れたキャンバスの影響を受けないよう、新しいキャンバスに取り替える
       const fresh = document.createElement("canvas");
       fresh.width = 1080; fresh.height = 1920; fresh.id = "outCanvas";
@@ -804,7 +807,7 @@ els.exportBtn.addEventListener("click", async () => {
         progressOnly();
       };
       const canvasStream = fresh.captureStream(30);
-      const tracks = [...canvasStream.getVideoTracks(), ...graph.dest.stream.getAudioTracks()];
+      const tracks = [...canvasStream.getVideoTracks(), ...audioTracks];
       setupRecorder(new MediaStream(tracks));
     } else {
       // この端末・ブラウザでは映像をキャンバスに描くと字幕を焼き込めないため、
