@@ -110,7 +110,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v17）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v18）</p>
 </header>
 
 <div class="wrap">
@@ -266,12 +266,19 @@ async function decodeAudioTo16kMono(file) {
   } finally { ctx.close(); }
 }
 
-els.fileInput.addEventListener("change", () => {
+els.fileInput.addEventListener("change", async () => {
   const f = els.fileInput.files && els.fileInput.files[0];
   if (!f) return;
   if (state.url) URL.revokeObjectURL(state.url);
   state.file = f;
-  state.url = URL.createObjectURL(f);
+  // 選んだファイルをその場で読み込み直してアプリ側のデータとして保持する。
+  // 端末から直接渡されたファイルは、Androidでは「外部データ」扱いで映像の取り込みを拒否されることがあるため
+  try {
+    const buf = await f.arrayBuffer();
+    state.url = URL.createObjectURL(new Blob([buf], { type: f.type || "video/mp4" }));
+  } catch (e) {
+    state.url = URL.createObjectURL(f);
+  }
   state.ranges = [];
   state.segments = [];
   els.srcVideo.src = state.url;
@@ -695,6 +702,13 @@ async function testCanvasClean(v) {
         v.addEventListener("canplay", () => { clearTimeout(to); res(); }, { once: true });
       });
     }
+    // 実際に表示できるコマが来るまで少し待ってから描く（空のコマだと「取り込み可」と誤判定するため）
+    if (v.requestVideoFrameCallback) {
+      await Promise.race([
+        new Promise((r) => { try { v.requestVideoFrameCallback(() => r()); } catch (e) { r(); } }),
+        new Promise((r) => setTimeout(r, 400)),
+      ]);
+    }
     const c = document.createElement("canvas");
     c.width = 16; c.height = 16;
     c.getContext("2d").drawImage(v, 0, 0, 16, 16);
@@ -928,6 +942,7 @@ els.exportBtn.addEventListener("click", async () => {
   const totalDur = ranges.reduce((a, r) => a + (r.end - r.start), 0);
   let v = els.srcVideo;
   let restoreMute = false;
+  const prevMuted = v.muted;
   const canvas = els.outCanvas, ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
   els.exportBtn.disabled = true;
@@ -938,7 +953,7 @@ els.exportBtn.addEventListener("click", async () => {
   setStatus(els.exportStatus, "書き出し中… 0%");
   try {
     // 書き出しは必ずプレビューの動画を使う。隠し動画は端末によって再生が止まってしまうため、もう使わない
-    if (v.muted) { v.muted = false; restoreMute = true; }
+    // 新方式では音声は読み込み済みの音声データから作るので、動画は消音のまま再生する（消音再生は端末に止められにくい）
     const previewReady = await probeReady(v, 4000);
     if (!previewReady) throw new Error("動画を読み込めませんでした");
     const mime = pickMimeType();
@@ -966,6 +981,7 @@ els.exportBtn.addEventListener("click", async () => {
     // まず、再生に頼らない方式（WebCodecs）で試す。対応していない・失敗した場合は従来の録画方式に切り替える
     let wcBlob = null;
     if (clean && typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
+      v.muted = true;
       els.exportLog.textContent = "";
       const modes = ["realtime", "step"];
       for (let mi = 0; mi < modes.length && !wcBlob; mi++) {
@@ -982,6 +998,8 @@ els.exportBtn.addEventListener("click", async () => {
     }
     let drawFrame = null;
     if (!wcBlob) {
+    // 従来の録画方式では、動画の音声をそのまま録るため消音を解除する
+    if (v.muted) { v.muted = false; restoreMute = true; }
     if (clean) {
       // 音声は動画そのもののストリームから取る（Web Audio経由はAndroidで再生が止まることがあるため使わない）
       const elemCapture = v.captureStream || v.mozCaptureStream;
@@ -1078,7 +1096,7 @@ els.exportBtn.addEventListener("click", async () => {
     console.error(e);
     setStatus(els.exportStatus, "書き出しでエラーが起きました：" + (e && e.message ? e.message : e), "warn");
   } finally {
-    if (restoreMute) els.srcVideo.muted = true;
+    try { els.srcVideo.muted = prevMuted; } catch (e) {}
     try { v.pause(); } catch (e) {}
     els.exportProgress.style.display = "none";
     updateActionButtons();
