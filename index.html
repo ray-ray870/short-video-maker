@@ -110,7 +110,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v12）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v13）</p>
 </header>
 
 <div class="wrap">
@@ -545,10 +545,11 @@ function drawContain(ctx, v, W, H) {
 }
 function drawSubtitle(ctx, text, W, H) {
   const flags = highlightFlags(text);
-  ctx.font = '900 84px "Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif';
+  const sc = W / 1080;
+  ctx.font = "900 " + Math.round(84 * sc) + 'px "Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif';
   ctx.textBaseline = "alphabetic";
   ctx.lineJoin = "round";
-  const maxW = 980, lines = [];
+  const maxW = 980 * sc, lines = [];
   let line = "";
   for (let i = 0; i < text.length; i++) {
     const test = line + text[i];
@@ -556,7 +557,7 @@ function drawSubtitle(ctx, text, W, H) {
     else line = test;
   }
   if (line) lines.push(line);
-  const lineH = 106, bottom = H - 280;
+  const lineH = 106 * sc, bottom = H - 280 * sc;
   lines.forEach((ln, li) => {
     const y = bottom - (lines.length - 1 - li) * lineH;
     const baseIdx = lines.slice(0, li).join("").length;
@@ -570,7 +571,7 @@ function drawSubtitle(ctx, text, W, H) {
     const totalW = ctx.measureText(ln).width;
     let x = (W - totalW) / 2;
     runs.forEach((r) => {
-      ctx.strokeStyle = "#000"; ctx.lineWidth = 16;
+      ctx.strokeStyle = "#000"; ctx.lineWidth = 16 * sc;
       ctx.strokeText(r.t, x, y);
       ctx.fillStyle = r.hl ? "#FFE600" : "#FFFFFF";
       ctx.fillText(r.t, x, y);
@@ -729,6 +730,131 @@ function buildSrt(ranges) {
   return lines.join("\n");
 }
 
+async function seekAndWaitFrame(v, t) {
+  await seekTo(v, t);
+  if (v.requestVideoFrameCallback) {
+    await Promise.race([
+      new Promise((r) => { try { v.requestVideoFrameCallback(() => r()); } catch (e) { r(); } }),
+      new Promise((r) => setTimeout(r, 350)),
+    ]);
+  }
+}
+function composeFrame(fctx, W2, H2, bgCtx, bgCanvas, v, t) {
+  bgCtx.save();
+  try { bgCtx.filter = "blur(10px) brightness(0.8)"; } catch (e) {}
+  drawCover(bgCtx, v, bgCanvas.width, bgCanvas.height, 1.15);
+  bgCtx.restore();
+  fctx.fillStyle = "#000"; fctx.fillRect(0, 0, W2, H2);
+  fctx.imageSmoothingEnabled = true;
+  fctx.drawImage(bgCanvas, 0, 0, W2, H2);
+  drawContain(fctx, v, W2, H2);
+  const seg = state.segments.find((s) => t >= s.start && t < s.end);
+  if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2);
+}
+
+/* 再生に頼らない書き出し：1コマずつ止めて取り込み、WebCodecsで動画にする（Androidで再生が止まる問題の根本対策） */
+async function exportWithWebCodecs(v, ranges, totalDur) {
+  const mod = await import("https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.1/build/mp4-muxer.mjs");
+  const Muxer = mod.Muxer, ArrayBufferTarget = mod.ArrayBufferTarget;
+  if (!Muxer || !ArrayBufferTarget) throw new Error("muxer unavailable");
+  const W = 720, H = 1280, FPS = 20;
+  const vcfg = { codec: "avc1.64001f", width: W, height: H, bitrate: 3000000, framerate: FPS };
+  const vsup = await VideoEncoder.isConfigSupported(vcfg);
+  if (!vsup.supported) throw new Error("H.264 encoding not supported");
+  let canAudio = false;
+  const acfg = { codec: "mp4a.40.2", sampleRate: 48000, numberOfChannels: 1, bitrate: 96000 };
+  if (state.audioData && typeof AudioEncoder !== "undefined") {
+    try { canAudio = (await AudioEncoder.isConfigSupported(acfg)).supported; } catch (e) { canAudio = false; }
+  }
+  const muxer = new Muxer({
+    target: new ArrayBufferTarget(),
+    video: { codec: "avc", width: W, height: H },
+    audio: canAudio ? { codec: "aac", numberOfChannels: 1, sampleRate: 48000 } : undefined,
+    fastStart: "in-memory",
+  });
+  let encErr = null;
+  const videoEncoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (e) => { encErr = e; },
+  });
+  videoEncoder.configure(vcfg);
+  let audioEncoder = null;
+  if (canAudio) {
+    audioEncoder = new AudioEncoder({
+      output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+      error: (e) => { encErr = e; },
+    });
+    audioEncoder.configure(acfg);
+  }
+  const fresh = document.createElement("canvas");
+  fresh.width = W; fresh.height = H; fresh.id = "outCanvas";
+  els.outCanvas.replaceWith(fresh);
+  els.outCanvas = fresh;
+  const fctx = fresh.getContext("2d");
+  const bgCanvas = document.createElement("canvas");
+  bgCanvas.width = 144; bgCanvas.height = 256;
+  const bgCtx = bgCanvas.getContext("2d");
+  try { v.pause(); } catch (e) {}
+  const totalFrames = ranges.reduce((a, r) => a + Math.max(1, Math.round((r.end - r.start) * FPS)), 0);
+  let frameIdx = 0;
+  for (const r of ranges) {
+    const n = Math.max(1, Math.round((r.end - r.start) * FPS));
+    for (let k = 0; k < n; k++) {
+      if (encErr) throw encErr;
+      const srcT = Math.min(r.start + k / FPS, Math.max(r.start, r.end - 0.01));
+      await seekAndWaitFrame(v, srcT);
+      composeFrame(fctx, W, H, bgCtx, bgCanvas, v, srcT);
+      const vf = new VideoFrame(fresh, { timestamp: Math.round(frameIdx * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
+      videoEncoder.encode(vf, { keyFrame: frameIdx % 60 === 0 });
+      vf.close();
+      frameIdx++;
+      const pct = Math.min(100, Math.floor((frameIdx / totalFrames) * 100));
+      els.exportProgress.value = pct;
+      setStatus(els.exportStatus, "書き出し中… " + pct + "%");
+      while (videoEncoder.encodeQueueSize > 8) await new Promise((r2) => setTimeout(r2, 20));
+    }
+  }
+  await videoEncoder.flush();
+  if (encErr) throw encErr;
+  if (audioEncoder) {
+    const src = state.audioData;
+    const parts = ranges.map((r) => [
+      Math.max(0, Math.floor(r.start * 16000)),
+      Math.min(src.length, Math.ceil(r.end * 16000)),
+    ]);
+    const total48 = parts.reduce((acc, pr) => acc + Math.floor((pr[1] - pr[0]) * 3), 0);
+    const pcm = new Float32Array(total48);
+    let off = 0;
+    parts.forEach((pr) => {
+      const a = pr[0], b = pr[1];
+      const n48 = Math.floor((b - a) * 3);
+      for (let i = 0; i < n48; i++) {
+        const pos = a + i / 3;
+        const i0 = Math.floor(pos), i1 = Math.min(i0 + 1, src.length - 1);
+        pcm[off + i] = src[i0] + (src[i1] - src[i0]) * (pos - i0);
+      }
+      off += n48;
+    });
+    const chunkFrames = 1024;
+    for (let s0 = 0; s0 < pcm.length; s0 += chunkFrames) {
+      const n = Math.min(chunkFrames, pcm.length - s0);
+      const buf = new Float32Array(n);
+      buf.set(pcm.subarray(s0, s0 + n));
+      const ad = new AudioData({
+        format: "f32-planar", sampleRate: 48000, numberOfFrames: n, numberOfChannels: 1,
+        timestamp: Math.round(s0 / 48000 * 1000000), data: buf.buffer,
+      });
+      audioEncoder.encode(ad);
+      ad.close();
+      while (audioEncoder.encodeQueueSize > 8) await new Promise((r2) => setTimeout(r2, 20));
+    }
+    await audioEncoder.flush();
+    if (encErr) throw encErr;
+  }
+  muxer.finalize();
+  return new Blob([muxer.target.buffer], { type: "video/mp4" });
+}
+
 els.exportBtn.addEventListener("click", async () => {
   if (!state.url || !state.ranges.length) { setStatus(els.exportStatus, "先に動画と切り抜き範囲を指定してください。", "warn"); return; }
   const ranges = state.ranges.map((r) => ({ start: r.start, end: r.end })).sort((a, b) => a.start - b.start);
@@ -770,7 +896,14 @@ els.exportBtn.addEventListener("click", async () => {
 
     await seekTo(v, ranges[0].start);
     const clean = await testCanvasClean(v);
+    // まず、再生に頼らない方式（WebCodecs）で試す。対応していない・失敗した場合は従来の録画方式に切り替える
+    let wcBlob = null;
+    if (clean && typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
+      try { wcBlob = await exportWithWebCodecs(v, ranges, totalDur); }
+      catch (e) { console.error(e); wcBlob = null; }
+    }
     let drawFrame = null;
+    if (!wcBlob) {
     if (clean) {
       // 音声は動画そのもののストリームから取る（Web Audio経由はAndroidで再生が止まることがあるため使わない）
       const elemCapture = v.captureStream || v.mozCaptureStream;
@@ -837,10 +970,12 @@ els.exportBtn.addEventListener("click", async () => {
     v.pause();
     rec.stop();
     await stopped;
-    state.usedFallback = usedFallback;
-    state.srtText = usedFallback ? buildSrt(ranges) : "";
-    const type = rec.mimeType || mime || "video/webm";
-    const blob = new Blob(chunks, { type });
+    }
+    state.usedFallback = wcBlob ? false : usedFallback;
+    state.srtText = (!wcBlob && usedFallback) ? buildSrt(ranges) : "";
+    let type, blob;
+    if (wcBlob) { blob = wcBlob; type = "video/mp4"; }
+    else { type = rec.mimeType || mime || "video/webm"; blob = new Blob(chunks, { type }); }
     if (state.resultUrl) URL.revokeObjectURL(state.resultUrl);
     state.resultUrl = URL.createObjectURL(blob);
     els.resultVideo.src = state.resultUrl;
