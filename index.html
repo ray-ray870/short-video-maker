@@ -110,7 +110,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v16）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v17）</p>
 </header>
 
 <div class="wrap">
@@ -189,7 +189,8 @@
         <h2><span class="step">4</span>ショート動画を作る</h2>
         <button id="exportBtn" disabled>🎥 ショート動画を作る</button>
         <progress id="exportProgress" max="100" value="0"></progress>
-        <p class="status" id="exportStatus">選んだ範囲をつなげて1本の縦型動画にします。再生しながら録画する方式なので、出来上がりの長さと同じくらい時間がかかります。録画中は画面を閉じないでください。</p>
+        <p class="status" id="exportStatus">選んだ範囲をつなげて1本の縦型動画にします。書き出し中は画面を閉じないでください。</p>
+        <p class="status" id="exportLog" style="white-space:pre-line"></p>
       </section>
 
       <section class="card">
@@ -219,7 +220,7 @@ const els = {
   rangeStatus: $("rangeStatus"), rangeList: $("rangeList"), rangeTotal: $("rangeTotal"),
   transcribeBtn: $("transcribeBtn"), asrProgress: $("asrProgress"), asrStatus: $("asrStatus"), modelSelect: $("modelSelect"),
   segList: $("segList"),
-  exportBtn: $("exportBtn"), exportStatus: $("exportStatus"), exportProgress: $("exportProgress"),
+  exportBtn: $("exportBtn"), exportStatus: $("exportStatus"), exportProgress: $("exportProgress"), exportLog: $("exportLog"),
   canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
   mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"), srtLink: $("srtLink"),
@@ -799,7 +800,7 @@ async function exportWithWebCodecs(v, ranges, totalDur, mode) {
     if (!v.requestVideoFrameCallback) throw new Error("realtime capture unsupported");
     await new Promise((resolve, reject) => {
       let rangeIdx = 0, outOffset = 0, frameCount = 0, done = false;
-      let lastMedia = -1, lastAdvanceAt = performance.now(), lastEncodedMt = -1, lastTs = -1;
+      let lastMedia = -1, lastAdvanceAt = performance.now(), lastEncodedMt = -1, lastSlot = -1;
       const finish = (err) => {
         if (done) return;
         done = true;
@@ -825,20 +826,22 @@ async function exportWithWebCodecs(v, ranges, totalDur, mode) {
         const r = ranges[rangeIdx];
         const mt = meta.mediaTime;
         if (encErr) { finish(encErr); return; }
-        if (mt >= r.start - 0.05 && mt < r.end && mt !== lastEncodedMt && videoEncoder.encodeQueueSize <= 10) {
-          lastEncodedMt = mt;
-          composeFrame(fctx, W, H, bgCtx, bgCanvas, v, mt);
-          let ts = Math.round((outOffset + (mt - r.start)) * 1000000);
-          if (ts <= lastTs) ts = lastTs + 1;
-          lastTs = ts;
-          const vf = new VideoFrame(fresh, {
-            timestamp: Math.max(0, ts),
-            duration: 33333,
-          });
-          videoEncoder.encode(vf, { keyFrame: frameCount % 60 === 0 });
-          vf.close();
-          frameCount++;
-          setPct(outOffset + Math.max(0, Math.min(mt, r.end) - r.start));
+        if (mt >= r.start - 0.05 && mt < r.end && videoEncoder.encodeQueueSize <= 10) {
+          // 表示コマを20fpsの等間隔に整えてから変換する（不規則な間隔だと組み立てで失敗するため）
+          const slot = Math.floor((outOffset + (mt - r.start)) * FPS);
+          if (slot > lastSlot) {
+            lastSlot = slot;
+            lastEncodedMt = mt;
+            composeFrame(fctx, W, H, bgCtx, bgCanvas, v, mt);
+            const vf = new VideoFrame(fresh, {
+              timestamp: Math.round(slot * 1000000 / FPS),
+              duration: Math.round(1000000 / FPS),
+            });
+            videoEncoder.encode(vf, { keyFrame: frameCount % 60 === 0 });
+            vf.close();
+            frameCount++;
+            setPct(outOffset + Math.max(0, Math.min(mt, r.end) - r.start));
+          }
         }
         if (mt >= r.end - 0.02 || v.ended) {
           outOffset += (r.end - r.start);
@@ -846,6 +849,7 @@ async function exportWithWebCodecs(v, ranges, totalDur, mode) {
           if (rangeIdx >= ranges.length) { finish(null); return; }
           const nr = ranges[rangeIdx];
           lastEncodedMt = -1;
+          lastSlot = Math.floor(outOffset * FPS) - 1;
           try { v.pause(); } catch (e) {}
           seekTo(v, nr.start).then(() => playWithRetry(v)).catch(() => {});
         }
@@ -962,13 +966,15 @@ els.exportBtn.addEventListener("click", async () => {
     // まず、再生に頼らない方式（WebCodecs）で試す。対応していない・失敗した場合は従来の録画方式に切り替える
     let wcBlob = null;
     if (clean && typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
-      const modes = ["realtime", "realtime", "step"];
+      els.exportLog.textContent = "";
+      const modes = ["realtime", "step"];
       for (let mi = 0; mi < modes.length && !wcBlob; mi++) {
         try { wcBlob = await exportWithWebCodecs(v, ranges, totalDur, modes[mi]); }
         catch (e) {
           console.error(e); wcBlob = null;
+          els.exportLog.textContent += "方式" + (mi + 1) + "は失敗：" + (e && e.message ? e.message : e) + "\n";
           if (mi < modes.length - 1) {
-            setStatus(els.exportStatus, "別の方式で書き出し直します（理由：" + (e && e.message ? e.message : e) + "）");
+            setStatus(els.exportStatus, "別の方式で書き出し直します…");
             await new Promise((r) => setTimeout(r, 600));
           }
         }
