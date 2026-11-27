@@ -120,7 +120,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v36）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v37）</p>
 </header>
 
 <div class="wrap">
@@ -691,7 +691,8 @@ function splitTextForSubtitle(text) {
       for (const s of seg.segment(text)) {
         const w = s.segment;
         if (!w) continue;
-        const attach = SKIP_TOKENS.has(w) || /^[、。，．・！？!?」]+$/.test(w) || /^(る|た|ない|たい|ます|ませ|ず|ぬ|う|よう|て|たり|つつ|ながら|られ|れる|させ|せる|い|く|かっ|さ|み|げ|しく|いる|いた|います|いました)$/.test(w);
+        const attach = SKIP_TOKENS.has(w) || /^[、。，．・！？!?」]+$/.test(w) || /^(る|た|ない|たい|ます|ませ|ず|ぬ|う|よう|て|たり|つつ|ながら|られ|れる|させ|せる|い|く|かっ|さ|み|げ|しく|いる|いた|います|いました)$/.test(w)
+          || (/^[億円万千百十人年位割秒分時日月倍本枚個歳]+$/.test(w) && atoms.length > 0 && /[0-9０-９]$/.test(atoms[atoms.length - 1]));
         if (attach && atoms.length) atoms[atoms.length - 1] += w;
         else atoms.push(w);
       }
