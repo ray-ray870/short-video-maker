@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>ショート動画メーカー（試作品）</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#3b2163">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   :root{
     --bg:#f2edfa; --card:#ffffff; --ink:#2e1a47; --sub:#7c6e99;
@@ -127,10 +133,16 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v41）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v42）</p>
 </header>
 
 <div class="wrap">
+  <section class="card" id="installCard">
+    <h2>📲 アプリとして使う</h2>
+    <p class="hint">ホーム画面に追加すると、アプリのようにすぐ開けます（ダウンロード無料）。</p>
+    <button type="button" id="installBtn" style="display:none">アプリをインストール</button>
+    <p class="hint" id="installHint">ボタンが出ないときは、ブラウザのメニュー（⋮）から「アプリをインストール」または「ホーム画面に追加」を選んでください。</p>
+  </section>
   <section class="card" id="restoreBar" style="display:none">
     <h2>💾 前回の作業があります</h2>
     <p class="status" id="restoreInfo"></p>
@@ -281,6 +293,7 @@ const els = {
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
   mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"), srtLink: $("srtLink"),
   restoreBar: $("restoreBar"), restoreInfo: $("restoreInfo"), restoreBtn: $("restoreBtn"), discardSaveBtn: $("discardSaveBtn"),
+  installCard: $("installCard"), installBtn: $("installBtn"), installHint: $("installHint"),
   exportVideo: $("exportVideo"),
 };
 const state = {
@@ -1717,6 +1730,28 @@ els.discardSaveBtn.addEventListener("click", () => {
     els.restoreBar.style.display = "block";
   }
 })();
+
+/* ---------- アプリとして使う（PWA） ---------- */
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+let deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  els.installBtn.style.display = "block";
+  els.installHint.style.display = "none";
+});
+els.installBtn.addEventListener("click", async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  try { await deferredInstallPrompt.userChoice; } catch (e) {}
+  deferredInstallPrompt = null;
+  els.installBtn.style.display = "none";
+});
+if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
+  els.installCard.style.display = "none";
+}
 
 renderRanges();
 renderSegList();
