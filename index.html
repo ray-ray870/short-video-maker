@@ -325,15 +325,17 @@ function getAsrWorker() {
 function transcribeWithWorker(audio, model) {
   return new Promise((resolve, reject) => {
     const worker = getAsrWorker();
-    const startedAt = Date.now();
+    const audioSec = audio.length / 16000;
+    const factor = (model && model.indexOf("small") >= 0) ? 2.5 : 1.2;
+    const estRunSec = Math.max(20, audioSec * factor);
+    let runStartedAt = 0;
     const timer = setInterval(() => {
-      const sec = Math.floor((Date.now() - startedAt) / 1000);
-      if (state.asrPhase === "model") {
-        setStatus(els.asrStatus, "音声認識モデルを準備しています…（初回はダウンロードで数分かかることがあります／経過 " + sec + " 秒）");
-      } else if (state.asrPhase === "run") {
-        setStatus(els.asrStatus, "文字起こし中です…（経過 " + sec + " 秒／画面はそのまま待っていてください）");
+      if (state.asrPhase === "run" && runStartedAt) {
+        const pct = Math.min(99, Math.floor(((Date.now() - runStartedAt) / 1000 / estRunSec) * 100));
+        els.asrProgress.value = pct;
+        setStatus(els.asrStatus, "文字起こし中です… " + pct + "%（目安）");
       }
-    }, 1000);
+    }, 500);
     const cleanup = () => { clearInterval(timer); worker.removeEventListener("message", onMsg); worker.removeEventListener("error", onErr); };
     const onMsg = (e) => {
       const m = e.data || {};
@@ -346,7 +348,11 @@ function transcribeWithWorker(audio, model) {
         }
       } else if (m.type === "ready") {
         state.asrPhase = "run";
+        runStartedAt = Date.now();
+        els.asrProgress.value = 0;
+        setStatus(els.asrStatus, "文字起こし中です… 0%（目安）");
       } else if (m.type === "result") {
+        els.asrProgress.value = 100;
         cleanup(); resolve(m.data);
       } else if (m.type === "error") {
         cleanup(); reject(new Error(m.message));
