@@ -120,7 +120,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v30）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v31）</p>
 </header>
 
 <div class="wrap">
@@ -209,6 +209,8 @@
           <span class="fld-label">上の文字（任意）</span>
           <textarea id="topText" rows="2" placeholder="例：佐世保市議会議員選挙　〇〇〇〇〇&#10;再生の道推薦"></textarea>
           <p class="hint">入力した文字が、動画の上のほうにずっと表示されます。改行もできます（右寄せ）。</p>
+          <div class="chip-row" id="topChips"></div>
+          <p class="hint">スペースで区切った言葉は、タップで色を変えられます（青→黄色→赤→解除）。</p>
         </div>
         <div class="fld">
           <span class="fld-label">画像・動画を挿入（任意）</span>
@@ -254,7 +256,7 @@ const els = {
   segList: $("segList"),
   exportBtn: $("exportBtn"), exportStatus: $("exportStatus"), exportProgress: $("exportProgress"), exportLog: $("exportLog"),
   insertInput: $("insertInput"), insertList: $("insertList"), materialBox: $("materialBox"),
-  bgSelect: $("bgSelect"), topText: $("topText"),
+  bgSelect: $("bgSelect"), topText: $("topText"), topChips: $("topChips"),
   canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
   mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"), srtLink: $("srtLink"),
@@ -262,7 +264,7 @@ const els = {
 };
 const state = {
   file: null, url: null, ranges: [], segments: [], inserts: [],
-  bgMode: "blur", topText: "",
+  bgMode: "blur", topText: "", topMarks: {},
   audioData: null, audioPromise: null, asrWorker: null, asrPhase: "",
   audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
 };
@@ -447,7 +449,7 @@ function renderInserts() {
   });
 }
 els.bgSelect.addEventListener("change", () => { state.bgMode = els.bgSelect.value; });
-els.topText.addEventListener("input", () => { state.topText = els.topText.value; });
+els.topText.addEventListener("input", () => { state.topText = els.topText.value; renderTopChips(); });
 els.insertInput.addEventListener("change", async () => {
   const files = Array.from(els.insertInput.files || []);
   els.insertInput.value = "";
@@ -1013,42 +1015,87 @@ function drawContainSrc(ctx, src, sw, sh, W, H) {
 function drawTopText(ctx, W, H) {
   const text = (state.topText || "").replace(/\r/g, "");
   if (!text.trim()) return;
+  const marks = state.topMarks || {};
+  const colorOf = (chunk) => HL_FILL[marks[chunk] === "blue" ? 1 : marks[chunk] === "yellow" ? 2 : marks[chunk] === "red" ? 3 : 0];
   let fs = Math.round(W * 0.056);
   ctx.save();
-  ctx.textAlign = "right";
   ctx.textBaseline = "top";
   const setF = () => { ctx.font = "700 " + fs + "px 'Noto Sans CJK JP', sans-serif"; };
   setF();
   const maxW = W * 0.92;
-  const wrap = () => {
-    const out = [];
+  const buildLines = () => {
+    const lines = [];
     text.split("\n").forEach((part) => {
-      if (!part) { out.push(""); return; }
-      let line = "";
-      for (const ch of part) {
-        if (line && ctx.measureText(line + ch).width > maxW) { out.push(line); line = ch; }
-        else line += ch;
-      }
-      if (line) out.push(line);
+      const toks = part.match(/[^ 　]+|[ 　]+/g) || [];
+      let cur = [], curW = 0;
+      const pushLine = () => { lines.push(cur); cur = []; curW = 0; };
+      toks.forEach((tok) => {
+        const isSpace = /^[ 　]+$/.test(tok);
+        const col = isSpace ? "#FFFFFF" : colorOf(tok);
+        const w = ctx.measureText(tok).width;
+        if (!isSpace && w > maxW) {
+          for (const ch of tok) {
+            const cw = ctx.measureText(ch).width;
+            if (curW + cw > maxW && cur.length) pushLine();
+            cur.push({ t: ch, c: col });
+            curW += cw;
+          }
+          return;
+        }
+        if (curW + w > maxW && cur.length) pushLine();
+        if (isSpace && !cur.length) return;
+        cur.push({ t: tok, c: col });
+        curW += w;
+      });
+      pushLine();
     });
-    return out;
+    return lines.filter((l) => l.length);
   };
-  let lines = wrap();
-  while (lines.length > 3 && fs > 18) { fs -= 3; setF(); lines = wrap(); }
+  let lines = buildLines();
+  while (lines.length > 3 && fs > 18) { fs -= 3; setF(); lines = buildLines(); }
   if (lines.length > 3) lines = lines.slice(0, 3);
   const lh = fs * 1.3;
   let y = H * 0.04;
-  const x0 = Math.round(W * 0.96);
-  lines.forEach((ln) => {
-    ctx.lineWidth = Math.max(4, fs * 0.16);
-    ctx.strokeStyle = "rgba(30,10,60,0.9)";
-    ctx.lineJoin = "round";
-    ctx.strokeText(ln, x0, y);
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillText(ln, x0, y);
+  ctx.textAlign = "left";
+  lines.forEach((atoms) => {
+    const totalW = atoms.reduce((a, at) => a + ctx.measureText(at.t).width, 0);
+    let x = Math.round(W * 0.96 - totalW);
+    atoms.forEach((at) => {
+      ctx.lineWidth = Math.max(4, fs * 0.16);
+      ctx.strokeStyle = "rgba(30,10,60,0.9)";
+      ctx.lineJoin = "round";
+      ctx.strokeText(at.t, x, y);
+      ctx.fillStyle = at.c;
+      ctx.fillText(at.t, x, y);
+      x += ctx.measureText(at.t).width;
+    });
     y += lh;
   });
   ctx.restore();
+}
+function renderTopChips() {
+  if (!els.topChips) return;
+  const text = els.topText.value || "";
+  const chunks = text.split(/[ 　\n]+/).map((c) => c.trim()).filter((c) => c.length > 0);
+  const seen = [];
+  chunks.forEach((c) => { if (!seen.includes(c)) seen.push(c); });
+  els.topChips.innerHTML = "";
+  seen.forEach((c) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    const cur = (state.topMarks || {})[c];
+    b.className = "chip" + (cur ? " c-" + cur : "");
+    b.textContent = c;
+    b.addEventListener("click", () => {
+      const order = [null, "blue", "yellow", "red"];
+      const now = (state.topMarks || {})[c] || null;
+      const next = order[(order.indexOf(now) + 1) % order.length];
+      if (!state.topMarks) state.topMarks = {};
+      if (next) state.topMarks[c] = next; else delete state.topMarks[c];
+      renderTopChips();
+    });
+    els.topChips.appendChild(b);
+  });
 }
 function composeSrc(fctx, W2, H2, bgCtx, bgCanvas, src, seg) {
   const dims = srcDims(src);
