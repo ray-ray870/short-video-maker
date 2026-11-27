@@ -134,6 +134,7 @@
         </div>
         <p class="status" id="mimeInfo"></p>
         <a class="download" id="downloadLink" href="#" download="short-video.mp4">⬇ ダウンロードする</a>
+        <a class="download" id="srtLink" href="#" download="subtitles.srt" style="display:none; background:#2f2f38;">⬇ 字幕ファイル（.srt）をダウンロード</a>
       </section>
     </div>
 
@@ -220,7 +221,7 @@ const els = {
   exportBtn: $("exportBtn"), exportStatus: $("exportStatus"), exportProgress: $("exportProgress"),
   canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
-  mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"),
+  mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"), srtLink: $("srtLink"),
   exportVideo: $("exportVideo"),
 };
 const state = {
@@ -653,6 +654,80 @@ function ensureAudioGraph(v) {
   return state.audioGraphs[key];
 }
 
+function waitRange(v, range, onFrame) {
+  return new Promise((res, rej) => {
+    let settled = false;
+    let rafId = 0;
+    const finish = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      cancelAnimationFrame(rafId);
+      clearInterval(wd);
+      fn(val);
+    };
+    const tick = () => {
+      if (v.paused && !v.ended) { v.play().catch(() => {}); }
+      if (onFrame) onFrame();
+      if (v.currentTime >= range.end || v.ended) { finish(res); return; }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    let lastT = v.currentTime, lastAdvance = Date.now();
+    const wd = setInterval(() => {
+      if (v.currentTime !== lastT) { lastT = v.currentTime; lastAdvance = Date.now(); }
+      if (v.paused && !v.ended) v.play().catch(() => {});
+      if (onFrame) onFrame();
+      if (v.currentTime >= range.end || v.ended) { finish(res); return; }
+      if (Date.now() - lastAdvance > 30000) {
+        finish(rej, new Error("再生が止まってしまいました。画面を開いたまま、もう一度お試しください"));
+      }
+    }, 500);
+  });
+}
+async function testCanvasClean(v) {
+  try {
+    if (v.readyState < 2) {
+      await new Promise((res) => {
+        const to = setTimeout(res, 3000);
+        v.addEventListener("canplay", () => { clearTimeout(to); res(); }, { once: true });
+      });
+    }
+    const c = document.createElement("canvas");
+    c.width = 16; c.height = 16;
+    c.getContext("2d").drawImage(v, 0, 0, 16, 16);
+    c.toDataURL();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function buildSrt(ranges) {
+  const p = (n, l) => String(n).padStart(l, "0");
+  const fmtT = (s) => {
+    s = Math.max(0, s);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = Math.floor(s % 60), ms = Math.floor((s - Math.floor(s)) * 1000);
+    return p(h, 2) + ":" + p(m, 2) + ":" + p(ss, 2) + "," + p(ms, 3);
+  };
+  let offset = 0, idx = 1;
+  const lines = [];
+  ranges.forEach((r) => {
+    state.segments
+      .filter((sg) => sg.end > r.start && sg.start < r.end)
+      .forEach((sg) => {
+        const a = Math.max(sg.start, r.start) - r.start + offset;
+        const b = Math.min(sg.end, r.end) - r.start + offset;
+        if (b > a && sg.text.trim()) {
+          lines.push(String(idx++));
+          lines.push(fmtT(a) + " --> " + fmtT(b));
+          lines.push(sg.text.trim());
+          lines.push("");
+        }
+      });
+    offset += (r.end - r.start);
+  });
+  return lines.join("\n");
+}
+
 els.exportBtn.addEventListener("click", async () => {
   if (!state.url || !state.ranges.length) { setStatus(els.exportStatus, "先に動画と切り抜き範囲を指定してください。", "warn"); return; }
   const ranges = state.ranges.map((r) => ({ start: r.start, end: r.end })).sort((a, b) => a.start - b.start);
@@ -676,30 +751,20 @@ els.exportBtn.addEventListener("click", async () => {
       const previewReady = await probeReady(v, 4000);
       if (!previewReady) throw new Error("動画を読み込めませんでした");
     }
-    const graph = ensureAudioGraph(v);
-    if (state.audioCtx.state === "suspended") await state.audioCtx.resume();
-
     const mime = pickMimeType();
-    const canvasStream = canvas.captureStream(30);
-    const tracks = [...canvasStream.getVideoTracks(), ...graph.dest.stream.getAudioTracks()];
-    const rec = new MediaRecorder(new MediaStream(tracks),
-      mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : { videoBitsPerSecond: 8000000 });
+    let rec = null, stopped = null, usedFallback = false;
     const chunks = [];
-    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-    const stopped = new Promise((res) => { rec.onstop = res; });
+    const setupRecorder = (stream) => {
+      rec = new MediaRecorder(stream,
+        mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : { videoBitsPerSecond: 8000000 });
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      stopped = new Promise((res) => { rec.onstop = res; });
+    };
 
     let outElapsed = 0;
     let curRange = ranges[0];
-    const drawFrame = () => {
+    const progressOnly = () => {
       const t = v.currentTime;
-      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
-      ctx.save();
-      try { ctx.filter = "blur(40px) brightness(0.75)"; } catch (e) {}
-      drawCover(ctx, v, W, H, 1.12);
-      ctx.restore();
-      drawContain(ctx, v, W, H);
-      const seg = state.segments.find((s) => t >= s.start && t < s.end);
-      if (seg && seg.text.trim()) drawSubtitle(ctx, seg.text.trim(), W, H);
       const done = outElapsed + Math.max(0, Math.min(t, curRange.end) - curRange.start);
       const pct = totalDur > 0 ? Math.min(100, Math.floor((done / totalDur) * 100)) : 0;
       els.exportProgress.value = pct;
@@ -707,6 +772,42 @@ els.exportBtn.addEventListener("click", async () => {
     };
 
     await seekTo(v, ranges[0].start);
+    const clean = await testCanvasClean(v);
+    let drawFrame = null;
+    if (clean) {
+      const graph = ensureAudioGraph(v);
+      if (state.audioCtx.state === "suspended") await state.audioCtx.resume();
+      // 前回の書き出しで汚れたキャンバスの影響を受けないよう、新しいキャンバスに取り替える
+      const fresh = document.createElement("canvas");
+      fresh.width = 1080; fresh.height = 1920; fresh.id = "outCanvas";
+      els.outCanvas.replaceWith(fresh);
+      els.outCanvas = fresh;
+      const fctx = fresh.getContext("2d");
+      const W2 = fresh.width, H2 = fresh.height;
+      drawFrame = () => {
+        const t = v.currentTime;
+        fctx.fillStyle = "#000"; fctx.fillRect(0, 0, W2, H2);
+        fctx.save();
+        try { fctx.filter = "blur(40px) brightness(0.75)"; } catch (e) {}
+        drawCover(fctx, v, W2, H2, 1.12);
+        fctx.restore();
+        drawContain(fctx, v, W2, H2);
+        const seg = state.segments.find((s) => t >= s.start && t < s.end);
+        if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2);
+        progressOnly();
+      };
+      const canvasStream = fresh.captureStream(30);
+      const tracks = [...canvasStream.getVideoTracks(), ...graph.dest.stream.getAudioTracks()];
+      setupRecorder(new MediaStream(tracks));
+    } else {
+      // この端末・ブラウザでは映像をキャンバスに描くと字幕を焼き込めないため、
+      // 動画そのものを録画し、字幕は .srt ファイルで渡す
+      usedFallback = true;
+      const capture = v.captureStream || v.mozCaptureStream;
+      if (!capture) throw new Error("この端末では書き出しができませんでした");
+      setupRecorder(capture.call(v));
+    }
+
     await playWithRetry(v);
     rec.start(200);
     for (let i = 0; i < ranges.length; i++) {
@@ -715,40 +816,14 @@ els.exportBtn.addEventListener("click", async () => {
         await seekTo(v, curRange.start);
         await playWithRetry(v);
       }
-      await new Promise((res, rej) => {
-        let settled = false;
-        let rafId = 0;
-        const finish = (fn, val) => {
-          if (settled) return;
-          settled = true;
-          cancelAnimationFrame(rafId);
-          clearInterval(wd);
-          fn(val);
-        };
-        const tick = () => {
-          if (v.paused && !v.ended) { v.play().catch(() => {}); }
-          drawFrame();
-          if (v.currentTime >= curRange.end || v.ended) { finish(res); return; }
-          rafId = requestAnimationFrame(tick);
-        };
-        rafId = requestAnimationFrame(tick);
-        // 画面が裏に回るなどして描画が止まっても、進み具合を見守って必ず終わらせる
-        let lastT = v.currentTime, lastAdvance = Date.now();
-        const wd = setInterval(() => {
-          if (v.currentTime !== lastT) { lastT = v.currentTime; lastAdvance = Date.now(); }
-          if (v.paused && !v.ended) v.play().catch(() => {});
-          drawFrame();
-          if (v.currentTime >= curRange.end || v.ended) { finish(res); return; }
-          if (Date.now() - lastAdvance > 30000) {
-            finish(rej, new Error("再生が止まってしまいました。画面を開いたまま、もう一度お試しください"));
-          }
-        }, 500);
-      });
+      await waitRange(v, curRange, drawFrame || progressOnly);
       outElapsed += (curRange.end - curRange.start);
     }
     v.pause();
     rec.stop();
     await stopped;
+    state.usedFallback = usedFallback;
+    state.srtText = usedFallback ? buildSrt(ranges) : "";
     const type = rec.mimeType || mime || "video/webm";
     const blob = new Blob(chunks, { type });
     if (state.resultUrl) URL.revokeObjectURL(state.resultUrl);
@@ -759,7 +834,17 @@ els.exportBtn.addEventListener("click", async () => {
     els.downloadLink.setAttribute("download", isMp4 ? "short-video.mp4" : "short-video.webm");
     els.mimeInfo.textContent = "形式：" + type + " ／ サイズ：" + (blob.size / 1024 / 1024).toFixed(1) + " MB";
     els.resultCard.style.display = "block";
-    setStatus(els.exportStatus, "書き出しが終わりました。下のプレビューで確認して、ダウンロードしてください。", "ok");
+    if (state.usedFallback && state.srtText) {
+      const srtBlob = new Blob([state.srtText], { type: "text/plain" });
+      if (state.srtUrl) URL.revokeObjectURL(state.srtUrl);
+      state.srtUrl = URL.createObjectURL(srtBlob);
+      els.srtLink.href = state.srtUrl;
+      els.srtLink.style.display = "flex";
+      setStatus(els.exportStatus, "書き出しが終わりました。この端末では字幕を映像に入れられなかったので、動画と字幕ファイル（.srt）の両方をダウンロードしてください。字幕ファイルは CapCut などで読み込めます。", "ok");
+    } else {
+      els.srtLink.style.display = "none";
+      setStatus(els.exportStatus, "書き出しが終わりました。下のプレビューで確認して、ダウンロードしてください。", "ok");
+    }
     els.resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     console.error(e);
