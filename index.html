@@ -110,7 +110,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v13）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v14）</p>
 </header>
 
 <div class="wrap">
@@ -732,12 +732,7 @@ function buildSrt(ranges) {
 
 async function seekAndWaitFrame(v, t) {
   await seekTo(v, t);
-  if (v.requestVideoFrameCallback) {
-    await Promise.race([
-      new Promise((r) => { try { v.requestVideoFrameCallback(() => r()); } catch (e) { r(); } }),
-      new Promise((r) => setTimeout(r, 350)),
-    ]);
-  }
+  await new Promise((r) => requestAnimationFrame(() => r()));
 }
 function composeFrame(fctx, W2, H2, bgCtx, bgCanvas, v, t) {
   bgCtx.save();
@@ -752,8 +747,8 @@ function composeFrame(fctx, W2, H2, bgCtx, bgCanvas, v, t) {
   if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2);
 }
 
-/* 再生に頼らない書き出し：1コマずつ止めて取り込み、WebCodecsで動画にする（Androidで再生が止まる問題の根本対策） */
-async function exportWithWebCodecs(v, ranges, totalDur) {
+/* WebCodecs書き出し。mode="realtime"：再生しながら取り込む（速い）。mode="step"：1コマずつ止めて取り込む（確実） */
+async function exportWithWebCodecs(v, ranges, totalDur, mode) {
   const mod = await import("https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.1/build/mp4-muxer.mjs");
   const Muxer = mod.Muxer, ArrayBufferTarget = mod.ArrayBufferTarget;
   if (!Muxer || !ArrayBufferTarget) throw new Error("muxer unavailable");
@@ -794,24 +789,89 @@ async function exportWithWebCodecs(v, ranges, totalDur) {
   const bgCanvas = document.createElement("canvas");
   bgCanvas.width = 144; bgCanvas.height = 256;
   const bgCtx = bgCanvas.getContext("2d");
-  try { v.pause(); } catch (e) {}
-  const totalFrames = ranges.reduce((a, r) => a + Math.max(1, Math.round((r.end - r.start) * FPS)), 0);
-  let frameIdx = 0;
-  for (const r of ranges) {
-    const n = Math.max(1, Math.round((r.end - r.start) * FPS));
-    for (let k = 0; k < n; k++) {
-      if (encErr) throw encErr;
-      const srcT = Math.min(r.start + k / FPS, Math.max(r.start, r.end - 0.01));
-      await seekAndWaitFrame(v, srcT);
-      composeFrame(fctx, W, H, bgCtx, bgCanvas, v, srcT);
-      const vf = new VideoFrame(fresh, { timestamp: Math.round(frameIdx * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
-      videoEncoder.encode(vf, { keyFrame: frameIdx % 60 === 0 });
-      vf.close();
-      frameIdx++;
-      const pct = Math.min(100, Math.floor((frameIdx / totalFrames) * 100));
-      els.exportProgress.value = pct;
-      setStatus(els.exportStatus, "書き出し中… " + pct + "%");
-      while (videoEncoder.encodeQueueSize > 8) await new Promise((r2) => setTimeout(r2, 20));
+  const setPct = (doneSec) => {
+    const pct = totalDur > 0 ? Math.min(100, Math.floor((doneSec / totalDur) * 100)) : 0;
+    els.exportProgress.value = pct;
+    setStatus(els.exportStatus, "書き出し中… " + pct + "%");
+  };
+  if (mode === "realtime") {
+    // 再生しながら、表示されたコマをそのまま取り込む（止まったら例外にして、確実な方式に切り替える）
+    if (!v.requestVideoFrameCallback) throw new Error("realtime capture unsupported");
+    await new Promise((resolve, reject) => {
+      let rangeIdx = 0, outOffset = 0, frameCount = 0, done = false;
+      let lastMedia = -1, lastAdvanceAt = performance.now(), lastEncodedMt = -1;
+      const finish = (err) => {
+        if (done) return;
+        done = true;
+        clearInterval(watchdog);
+        try { v.pause(); } catch (e) {}
+        if (err) reject(err); else resolve();
+      };
+      const startAt = performance.now();
+      const watchdog = setInterval(() => {
+        if (done) return;
+        const nowMs = performance.now();
+        if (frameCount === 0 && nowMs - startAt > 6000) { finish(new Error("playback never started")); return; }
+        if (v.paused) {
+          if (frameCount > 0 && nowMs - lastAdvanceAt > 3000) { playWithRetry(v); lastAdvanceAt = nowMs; }
+          return;
+        }
+        if (v.currentTime === lastMedia) {
+          if (nowMs - lastAdvanceAt > 5000) finish(new Error("playback stalled"));
+        } else { lastMedia = v.currentTime; lastAdvanceAt = nowMs; }
+      }, 500);
+      const onFrame = (now, meta) => {
+        if (done) return;
+        const r = ranges[rangeIdx];
+        const mt = meta.mediaTime;
+        if (encErr) { finish(encErr); return; }
+        if (mt >= r.start - 0.05 && mt < r.end && mt !== lastEncodedMt && videoEncoder.encodeQueueSize <= 10) {
+          lastEncodedMt = mt;
+          composeFrame(fctx, W, H, bgCtx, bgCanvas, v, mt);
+          const vf = new VideoFrame(fresh, {
+            timestamp: Math.max(0, Math.round((outOffset + (mt - r.start)) * 1000000)),
+            duration: 33333,
+          });
+          videoEncoder.encode(vf, { keyFrame: frameCount % 60 === 0 });
+          vf.close();
+          frameCount++;
+          setPct(outOffset + Math.max(0, Math.min(mt, r.end) - r.start));
+        }
+        if (mt >= r.end - 0.02 || v.ended) {
+          outOffset += (r.end - r.start);
+          rangeIdx++;
+          if (rangeIdx >= ranges.length) { finish(null); return; }
+          const nr = ranges[rangeIdx];
+          lastEncodedMt = -1;
+          try { v.pause(); } catch (e) {}
+          seekTo(v, nr.start).then(() => playWithRetry(v)).catch(() => {});
+        }
+        if (!done) v.requestVideoFrameCallback(onFrame);
+      };
+      seekTo(v, ranges[0].start)
+        .then(async () => { await playWithRetry(v); v.requestVideoFrameCallback(onFrame); })
+        .catch((e) => finish(e));
+    });
+  } else {
+    try { v.pause(); } catch (e) {}
+    const SFPS = 15;
+    const totalFrames = ranges.reduce((a, r) => a + Math.max(1, Math.round((r.end - r.start) * SFPS)), 0);
+    let frameIdx = 0, doneSecBase = 0;
+    for (const r of ranges) {
+      const n = Math.max(1, Math.round((r.end - r.start) * SFPS));
+      for (let k = 0; k < n; k++) {
+        if (encErr) throw encErr;
+        const srcT = Math.min(r.start + k / SFPS, Math.max(r.start, r.end - 0.01));
+        await seekAndWaitFrame(v, srcT);
+        composeFrame(fctx, W, H, bgCtx, bgCanvas, v, srcT);
+        const vf = new VideoFrame(fresh, { timestamp: Math.round(frameIdx * 1000000 / SFPS), duration: Math.round(1000000 / SFPS) });
+        videoEncoder.encode(vf, { keyFrame: frameIdx % 60 === 0 });
+        vf.close();
+        frameIdx++;
+        setPct(doneSecBase + (k + 1) / SFPS);
+        while (videoEncoder.encodeQueueSize > 8) await new Promise((r2) => setTimeout(r2, 20));
+      }
+      doneSecBase += (r.end - r.start);
     }
   }
   await videoEncoder.flush();
@@ -899,8 +959,13 @@ els.exportBtn.addEventListener("click", async () => {
     // まず、再生に頼らない方式（WebCodecs）で試す。対応していない・失敗した場合は従来の録画方式に切り替える
     let wcBlob = null;
     if (clean && typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
-      try { wcBlob = await exportWithWebCodecs(v, ranges, totalDur); }
-      catch (e) { console.error(e); wcBlob = null; }
+      try { wcBlob = await exportWithWebCodecs(v, ranges, totalDur, "realtime"); }
+      catch (e) {
+        console.error(e); wcBlob = null;
+        setStatus(els.exportStatus, "別の方式で書き出し直します…");
+        try { wcBlob = await exportWithWebCodecs(v, ranges, totalDur, "step"); }
+        catch (e2) { console.error(e2); wcBlob = null; }
+      }
     }
     let drawFrame = null;
     if (!wcBlob) {
