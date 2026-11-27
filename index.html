@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>ショート動画メーカー（試作品）</title>
 <style>
   :root{
@@ -109,7 +110,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v9）</p>
 </header>
 
 <div class="wrap">
@@ -803,6 +804,7 @@ els.exportBtn.addEventListener("click", async () => {
       // この端末・ブラウザでは映像をキャンバスに描くと字幕を焼き込めないため、
       // 動画そのものを録画し、字幕は .srt ファイルで渡す
       usedFallback = true;
+      setStatus(els.exportStatus, "確認：この端末では字幕を映像に入れられないため、字幕なし＋字幕ファイルで書き出します");
       const capture = v.captureStream || v.mozCaptureStream;
       if (!capture) throw new Error("この端末では書き出しができませんでした");
       setupRecorder(capture.call(v));
