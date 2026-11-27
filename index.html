@@ -120,7 +120,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v32）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v33）</p>
 </header>
 
 <div class="wrap">
@@ -1054,7 +1054,7 @@ function drawTopText(ctx, W, H) {
   let lines = buildLines();
   while (lines.length > 3 && fs > 18) { fs -= 3; setF(); lines = buildLines(); }
   if (lines.length > 3) lines = lines.slice(0, 3);
-  const lh = fs * 1.65;
+  const lh = fs * 1.9;
   let y = H * 0.04;
   ctx.textAlign = "left";
   lines.forEach((atoms) => {
