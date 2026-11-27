@@ -173,8 +173,8 @@
         <p class="hint">選んだ範囲の音声だけを文字起こしするので、動画全体よりずっと早く終わります。終わると、範囲の端は字幕の切れ目に合わせて自動で整えます。</p>
         <label for="modelSelect">字幕の精度</label>
         <select id="modelSelect">
-          <option value="Xenova/whisper-small">精度優先（時間がかかります）</option>
-          <option value="Xenova/whisper-base" selected>速さ優先（軽い・精度は低め）</option>
+          <option value="Xenova/whisper-small" selected>精度優先（時間がかかります）</option>
+          <option value="Xenova/whisper-base">速さ優先（軽い・精度は低め）</option>
         </select>
         <button id="transcribeBtn" disabled>🎙 文字起こしする</button>
         <progress id="asrProgress" max="100" value="0"></progress>
