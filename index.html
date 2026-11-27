@@ -118,7 +118,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v20）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v21）</p>
 </header>
 
 <div class="wrap">
@@ -587,6 +587,21 @@ function highlightFlags(text, marks) {
   return flags;
 }
 function splitChunks(text) {
+  // 単語ごとに分ける（助詞や読点は前の単語にくっつけて、タップしやすい単位にする）
+  if (typeof Intl !== "undefined" && Intl.Segmenter) {
+    try {
+      const seg = new Intl.Segmenter("ja", { granularity: "word" });
+      const parts = [];
+      for (const s of seg.segment(text)) {
+        const w = s.segment;
+        if (!w.trim()) continue;
+        const attach = /^[はがをにへとのではもや]$/.test(w) || /^[、。，．・！？!?」]+$/.test(w);
+        if (attach && parts.length) parts[parts.length - 1] += w;
+        else parts.push(w);
+      }
+      if (parts.length) return parts;
+    } catch (e) {}
+  }
   return text.split(/(?<=、|。)/).map((c) => c.trim()).filter((c) => c.length > 0);
 }
 function drawCover(ctx, v, W, H, scaleMul) {
