@@ -144,7 +144,7 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v45）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v46）</p>
 </header>
 
 <div class="wrap">
@@ -1133,13 +1133,15 @@ function drawContainSrc(ctx, src, sw, sh, W, H) {
   const w = sw * scale, h = sh * scale;
   ctx.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
 }
-function drawTopText(ctx, W, H) {
+function drawTopText(ctx, W, H, overMedia) {
   const text = (state.topText || "").replace(/\r/g, "");
   if (!text.trim()) return;
   const marks = state.topMarks || {};
   const colorOf = (chunk) => HL_FILL[marks[chunk] === "blue" ? 1 : marks[chunk] === "yellow" ? 2 : marks[chunk] === "red" ? 3 : 0];
   let fs = Math.round(W * 0.056);
   ctx.save();
+  // 映像の上に直接乗るとき（縦長動画など帯がないとき）は、少し透過させて映像が透けるようにする
+  if (overMedia) ctx.globalAlpha = 0.8;
   ctx.textBaseline = "top";
   const setF = () => { ctx.font = "700 " + fs + "px 'Noto Sans CJK JP', sans-serif"; };
   setF();
@@ -1244,9 +1246,11 @@ function composeSrc(fctx, W2, H2, bgCtx, bgCanvas, src, seg) {
     fctx.drawImage(bgCanvas, 0, 0, W2, H2);
   }
   drawContainSrc(fctx, src, dims[0], dims[1], W2, H2);
-  const mediaBottom = (H2 - dims[1] * Math.min(W2 / dims[0], H2 / dims[1])) / 2 + dims[1] * Math.min(W2 / dims[0], H2 / dims[1]);
+  const cScale = Math.min(W2 / dims[0], H2 / dims[1]);
+  const mediaBottom = (H2 - dims[1] * cScale) / 2 + dims[1] * cScale;
+  const mediaTop = (H2 - dims[1] * cScale) / 2;
   if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.marks || {}, mediaBottom);
-  drawTopText(fctx, W2, H2);
+  drawTopText(fctx, W2, H2, mediaTop < H2 * 0.06);
 }
 function buildTimeline(ranges) {
   const items = [];
@@ -1597,7 +1601,8 @@ els.exportBtn.addEventListener("click", async () => {
         const mediaBottom = mbScale ? (H2 - v.videoHeight * mbScale) / 2 + v.videoHeight * mbScale : null;
         const seg = state.segments.find((s) => t >= s.start && t < s.end);
         if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.marks || {}, mediaBottom);
-        drawTopText(fctx, W2, H2);
+        const mediaTopFb = mbScale ? (H2 - v.videoHeight * mbScale) / 2 : 0;
+        drawTopText(fctx, W2, H2, mediaTopFb < H2 * 0.06);
         progressOnly();
       };
       const canvasStream = fresh.captureStream(30);
