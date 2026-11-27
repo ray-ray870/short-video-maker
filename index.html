@@ -120,7 +120,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v38）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v39）</p>
 </header>
 
 <div class="wrap">
@@ -682,6 +682,7 @@ function snapRangesToSegments() {
 }
 
 const SUB_MAX = 33;
+const SUB_HARD = 44;
 function splitTextForSubtitle(text) {
   if (text.length <= SUB_MAX) return [text];
   let atoms = [];
@@ -701,15 +702,15 @@ function splitTextForSubtitle(text) {
   if (!atoms.length) atoms = text.split(/(?<=、|。)/).filter((c) => c.length > 0);
   const flat = [];
   atoms.forEach((a) => {
-    if (a.length <= SUB_MAX) flat.push(a);
-    else for (let i = 0; i < a.length; i += SUB_MAX) flat.push(a.slice(i, i + SUB_MAX));
+    if (a.length <= SUB_HARD) flat.push(a);
+    else for (let i = 0; i < a.length; i += SUB_HARD) flat.push(a.slice(i, i + SUB_HARD));
   });
   const lines = [];
   let cur = "";
   flat.forEach((a) => {
-    // 区切りのいいところ（読点・句点の後）を優先して区切る
+    // 区切りのいいところ（読点・句点の後）を優先して区切る。区切れなければ4行分（44文字）まで許す
     if (cur && (/[、。」]$/.test(cur) && cur.length >= SUB_MAX * 0.55)) { lines.push(cur); cur = a; return; }
-    if (cur && (cur + a).length > SUB_MAX) { lines.push(cur); cur = a; }
+    if (cur && (cur + a).length > SUB_HARD) { lines.push(cur); cur = a; }
     else cur += a;
   });
   if (cur) lines.push(cur);
