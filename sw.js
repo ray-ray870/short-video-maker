@@ -6,10 +6,10 @@ const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./icon-192.png",
-  "./icon-512.png",
-  "./icon-maskable-512.png",
-  "./apple-touch-icon.png",
+  "./アイコン192.png",
+  "./アイコン512.png",
+  "./マスカブルアイコン.png",
+  "./iPhone用アイコン.png",
   "./materials/materials.json"
 ];
 
