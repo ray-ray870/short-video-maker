@@ -110,7 +110,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v15）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v16）</p>
 </header>
 
 <div class="wrap">
@@ -753,7 +753,7 @@ async function exportWithWebCodecs(v, ranges, totalDur, mode) {
   const Muxer = mod.Muxer, ArrayBufferTarget = mod.ArrayBufferTarget;
   if (!Muxer || !ArrayBufferTarget) throw new Error("muxer unavailable");
   const W = 720, H = 1280, FPS = 20;
-  const vcfg = { codec: "avc1.64001f", width: W, height: H, bitrate: 3000000, framerate: FPS };
+  const vcfg = { codec: "avc1.64001f", width: W, height: H, bitrate: 3000000, framerate: FPS, avc: { format: "avc" } };
   const vsup = await VideoEncoder.isConfigSupported(vcfg);
   if (!vsup.supported) throw new Error("H.264 encoding not supported");
   let canAudio = false;
