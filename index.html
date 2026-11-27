@@ -204,7 +204,7 @@
   </div>
 </div>
 
-<video id="exportVideo" class="hidden-video" playsinline></video>
+<video id="exportVideo" class="hidden-video" playsinline preload="auto"></video>
 
 <script>
 "use strict";
@@ -272,6 +272,7 @@ els.fileInput.addEventListener("change", () => {
   state.segments = [];
   els.srcVideo.src = state.url;
   els.exportVideo.src = state.url;
+  try { els.exportVideo.load(); } catch (e) {}
   els.fileName.textContent = "選択中：" + f.name;
   els.addRangeBtn.disabled = false;
   els.segList.innerHTML = "";
@@ -580,39 +581,92 @@ function pickMimeType() {
   for (const c of cands) { try { if (MediaRecorder.isTypeSupported(c)) return c; } catch (e) {} }
   return "";
 }
-function seekTo(v, t) {
-  return new Promise((res, rej) => {
-    const onSeeked = () => { v.removeEventListener("seeked", onSeeked); res(); };
-    v.addEventListener("seeked", onSeeked);
-    v.onerror = () => rej(new Error("動画を読み込めませんでした"));
-    v.currentTime = t;
+function probeReady(v, timeoutMs) {
+  if (v.readyState >= 1) return Promise.resolve(true);
+  return new Promise((res) => {
+    const done = (ok) => { cleanup(); res(ok); };
+    const cleanup = () => {
+      v.removeEventListener("loadedmetadata", onMeta);
+      v.removeEventListener("error", onErr);
+      clearTimeout(timer);
+    };
+    const onMeta = () => done(true);
+    const onErr = () => done(false);
+    const timer = setTimeout(() => done(v.readyState >= 1), timeoutMs || 4000);
+    v.addEventListener("loadedmetadata", onMeta);
+    v.addEventListener("error", onErr);
+    try { v.load(); } catch (e) {}
   });
+}
+function seekTo(v, t) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (ok, err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (ok) resolve(); else reject(err || new Error("動画を読み込めませんでした"));
+    };
+    const cleanup = () => {
+      v.removeEventListener("seeked", onSeeked);
+      clearInterval(poll);
+      clearTimeout(timer);
+    };
+    const onSeeked = () => finish(true);
+    const poll = setInterval(() => {
+      if (Math.abs(v.currentTime - t) < 0.6 && v.readyState >= 2) finish(true);
+    }, 250);
+    const timer = setTimeout(() => {
+      if (Math.abs(v.currentTime - t) < 1.0) finish(true);
+      else finish(false);
+    }, 20000);
+    v.addEventListener("seeked", onSeeked);
+    try { v.currentTime = t; } catch (e) { finish(false, e); }
+  });
+}
+function ensureAudioGraph(v) {
+  if (!state.audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    state.audioCtx = new AC();
+    state.audioGraphs = {};
+  }
+  const key = (v === els.srcVideo) ? "src" : "export";
+  if (!state.audioGraphs[key]) {
+    const source = state.audioCtx.createMediaElementSource(v);
+    const dest = state.audioCtx.createMediaStreamDestination();
+    source.connect(dest);
+    source.connect(state.audioCtx.destination);
+    state.audioGraphs[key] = { source, dest };
+  }
+  return state.audioGraphs[key];
 }
 
 els.exportBtn.addEventListener("click", async () => {
   if (!state.url || !state.ranges.length) { setStatus(els.exportStatus, "先に動画と切り抜き範囲を指定してください。", "warn"); return; }
   const ranges = state.ranges.map((r) => ({ start: r.start, end: r.end })).sort((a, b) => a.start - b.start);
   const totalDur = ranges.reduce((a, r) => a + (r.end - r.start), 0);
-  const v = els.exportVideo;
+  let v = els.exportVideo;
+  let restoreMute = false;
   const canvas = els.outCanvas, ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
   els.exportBtn.disabled = true;
   els.canvasBox.style.display = "flex";
   els.canvasCap.style.display = "block";
   try {
-    if (!state.audioCtx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      state.audioCtx = new AC();
-      state.mediaSource = state.audioCtx.createMediaElementSource(v);
-      state.audioDest = state.audioCtx.createMediaStreamDestination();
-      state.mediaSource.connect(state.audioDest);
-      state.mediaSource.connect(state.audioCtx.destination);
+    // 書き出し用の隠し動画が読み込めない端末では、プレビュー側の動画で代用する（Android対策）
+    const hiddenReady = await probeReady(els.exportVideo, 4000);
+    if (!hiddenReady) {
+      v = els.srcVideo;
+      if (v.muted) { v.muted = false; restoreMute = true; }
+      const previewReady = await probeReady(v, 4000);
+      if (!previewReady) throw new Error("動画を読み込めませんでした");
     }
+    const graph = ensureAudioGraph(v);
     if (state.audioCtx.state === "suspended") await state.audioCtx.resume();
 
     const mime = pickMimeType();
     const canvasStream = canvas.captureStream(30);
-    const tracks = [...canvasStream.getVideoTracks(), ...state.audioDest.stream.getAudioTracks()];
+    const tracks = [...canvasStream.getVideoTracks(), ...graph.dest.stream.getAudioTracks()];
     const rec = new MediaRecorder(new MediaStream(tracks),
       mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : { videoBitsPerSecond: 8000000 });
     const chunks = [];
@@ -673,6 +727,8 @@ els.exportBtn.addEventListener("click", async () => {
     console.error(e);
     setStatus(els.exportStatus, "書き出しでエラーが起きました：" + (e && e.message ? e.message : e), "warn");
   } finally {
+    if (restoreMute) els.srcVideo.muted = true;
+    try { els.srcVideo.pause(); } catch (e) {}
     updateActionButtons();
   }
 });
