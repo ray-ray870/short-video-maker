@@ -83,6 +83,8 @@
   .seg .time{ font-size:13px; color:var(--sub); font-variant-numeric:tabular-nums; }
   .seg .text{ font-size:16px; }
   .seg textarea{ margin-top:4px; }
+  .fld{ margin-bottom:14px; }
+  .fld-label{ display:block; font-weight:700; margin-bottom:6px; }
   .chip-row{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
   .chip{
     border:2px solid var(--line); background:#fff; color:var(--ink);
@@ -118,7 +120,7 @@
 <body>
 <header>
   <h1>🎬 ショート動画メーカー（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v24）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v26）</p>
 </header>
 
 <div class="wrap">
@@ -195,6 +197,15 @@
 
       <section class="card">
         <h2><span class="step">4</span>ショート動画を作る</h2>
+        <div class="fld">
+          <span class="fld-label">画像・動画を挿入（任意）</span>
+          <input type="file" id="insertInput" accept="image/*,video/*" multiple>
+          <div class="seg-list" id="insertList"></div>
+          <p class="hint">最初・切り抜きの間・最後に、好きな画像や動画を入れられます。画像は表示する秒数を指定できます（初期値3秒）。動画はそのままの長さで入ります。</p>
+          <span class="fld-label">素材BOX</span>
+          <div class="chip-row" id="materialBox"><span class="hint">読み込み中…</span></div>
+          <p class="hint">アプリに入っている素材からも選べます。タップすると挿入リストに追加されます。</p>
+        </div>
         <button id="exportBtn" disabled>🎥 ショート動画を作る</button>
         <progress id="exportProgress" max="100" value="0"></progress>
         <p class="status" id="exportStatus">選んだ範囲をつなげて1本の縦型動画にします。書き出し中は画面を閉じないでください。</p>
@@ -229,13 +240,14 @@ const els = {
   transcribeBtn: $("transcribeBtn"), asrProgress: $("asrProgress"), asrStatus: $("asrStatus"), modelSelect: $("modelSelect"),
   segList: $("segList"),
   exportBtn: $("exportBtn"), exportStatus: $("exportStatus"), exportProgress: $("exportProgress"), exportLog: $("exportLog"),
+  insertInput: $("insertInput"), insertList: $("insertList"), materialBox: $("materialBox"),
   canvasBox: $("canvasBox"), canvasCap: $("canvasCap"), outCanvas: $("outCanvas"),
   resultCard: $("resultCard"), resultVideo: $("resultVideo"),
   mimeInfo: $("mimeInfo"), downloadLink: $("downloadLink"), srtLink: $("srtLink"),
   exportVideo: $("exportVideo"),
 };
 const state = {
-  file: null, url: null, ranges: [], segments: [],
+  file: null, url: null, ranges: [], segments: [], inserts: [],
   audioData: null, audioPromise: null, asrWorker: null, asrPhase: "",
   audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
 };
@@ -279,6 +291,11 @@ els.fileInput.addEventListener("change", async () => {
   if (!f) return;
   if (state.url) URL.revokeObjectURL(state.url);
   state.file = f;
+  state.inserts.forEach((ins) => {
+    try { URL.revokeObjectURL(ins.url); } catch (e) {}
+    if (ins.el && ins.el.parentNode) ins.el.parentNode.removeChild(ins.el);
+  });
+  state.inserts = [];
   // 選んだファイルをその場で読み込み直してアプリ側のデータとして保持する。
   // 端末から直接渡されたファイルは、Androidでは「外部データ」扱いで映像の取り込みを拒否されることがあるため
   try {
@@ -367,7 +384,136 @@ function renderRanges() {
   els.rangeTotal.textContent = state.ranges.length
     ? "合計 " + state.ranges.length + " か所・" + totalRangeSec().toFixed(1) + " 秒のショートになります。"
     : "";
+  renderInserts();
 }
+function renderInserts() {
+  if (!els.insertList) return;
+  els.insertList.innerHTML = "";
+  state.inserts.forEach((ins, idx) => {
+    const div = document.createElement("div");
+    div.className = "range-item";
+    const info = document.createElement("div");
+    info.className = "info";
+    const main = document.createElement("div");
+    main.textContent = (ins.kind === "image" ? "🖼 " : "🎞 ") + ins.name;
+    info.appendChild(main);
+    const row = document.createElement("div");
+    row.style.display = "flex"; row.style.gap = "6px"; row.style.alignItems = "center"; row.style.flexWrap = "wrap"; row.style.marginTop = "4px";
+    const sel = document.createElement("select");
+    const opts = [{ v: 0, t: "最初" }];
+    for (let k = 1; k < state.ranges.length; k++) opts.push({ v: k, t: "範囲" + k + "の後" });
+    if (state.ranges.length >= 1) opts.push({ v: state.ranges.length, t: "最後" });
+    opts.forEach((o) => { const op = document.createElement("option"); op.value = o.v; op.textContent = o.t; sel.appendChild(op); });
+    ins.pos = Math.max(0, Math.min(ins.pos == null ? state.ranges.length : ins.pos, state.ranges.length));
+    sel.value = String(ins.pos);
+    sel.addEventListener("change", () => { ins.pos = parseInt(sel.value, 10); });
+    row.appendChild(sel);
+    if (ins.kind === "image") {
+      const sec = document.createElement("input");
+      sec.type = "number"; sec.min = "1"; sec.max = "30"; sec.step = "1"; sec.value = ins.dur || 3;
+      sec.style.width = "76px";
+      sec.addEventListener("change", () => { ins.dur = Math.max(1, Math.min(30, parseFloat(sec.value) || 3)); sec.value = ins.dur; });
+      row.appendChild(sec);
+      const unit = document.createElement("span"); unit.textContent = "秒表示"; row.appendChild(unit);
+    } else {
+      const d = document.createElement("span"); d.className = "dur"; d.textContent = (ins.dur || 0).toFixed(1) + " 秒"; row.appendChild(d);
+    }
+    info.appendChild(row);
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "mini danger"; del.textContent = "削除";
+    del.addEventListener("click", () => {
+      try { URL.revokeObjectURL(ins.url); } catch (e) {}
+      if (ins.el && ins.el.parentNode) ins.el.parentNode.removeChild(ins.el);
+      state.inserts.splice(idx, 1);
+      renderInserts();
+    });
+    div.appendChild(info); div.appendChild(del);
+    els.insertList.appendChild(div);
+  });
+}
+els.insertInput.addEventListener("change", async () => {
+  const files = Array.from(els.insertInput.files || []);
+  els.insertInput.value = "";
+  for (const f of files) {
+    const isImg = (f.type || "").indexOf("image/") === 0;
+    const isVid = (f.type || "").indexOf("video/") === 0;
+    if (!isImg && !isVid) continue;
+    let url;
+    try {
+      const buf = await f.arrayBuffer();
+      url = URL.createObjectURL(new Blob([buf], { type: f.type || (isImg ? "image/jpeg" : "video/mp4") }));
+    } catch (e) { url = URL.createObjectURL(f); }
+    const ins = { kind: isImg ? "image" : "video", name: f.name, url, dur: 3, pos: state.ranges.length, img: null, el: null, audioData: null };
+    if (isImg) {
+      const img = new Image();
+      img.src = url;
+      ins.img = img;
+    } else {
+      const el = document.createElement("video");
+      el.muted = true; el.playsInline = true; el.preload = "auto"; el.src = url;
+      el.style.cssText = "position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0.01;";
+      document.body.appendChild(el);
+      ins.el = el;
+      ins.dur = 0;
+      await new Promise((res) => {
+        const to = setTimeout(res, 4000);
+        el.addEventListener("loadedmetadata", () => { clearTimeout(to); ins.dur = el.duration || 0; res(); }, { once: true });
+      });
+      decodeAudioTo16kMono(f).then((a) => { ins.audioData = a; }).catch(() => {});
+    }
+    state.inserts.push(ins);
+  }
+  renderInserts();
+});
+
+/* ---------- 素材BOX（アプリに最初から入っている素材） ---------- */
+async function addMaterialInsert(mat) {
+  const isImg = mat.kind === "image";
+  const ins = { kind: mat.kind, name: mat.name, url: mat.src, dur: 3, pos: state.ranges.length, img: null, el: null, audioData: null };
+  if (isImg) {
+    const img = new Image();
+    img.src = mat.src;
+    ins.img = img;
+  } else {
+    const el = document.createElement("video");
+    el.muted = true; el.playsInline = true; el.preload = "auto"; el.src = mat.src;
+    el.style.cssText = "position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0.01;";
+    document.body.appendChild(el);
+    ins.el = el;
+    ins.dur = 0;
+    await new Promise((res) => {
+      const to = setTimeout(res, 4000);
+      el.addEventListener("loadedmetadata", () => { clearTimeout(to); ins.dur = el.duration || 0; res(); }, { once: true });
+    });
+    fetch(mat.src).then((r) => r.blob()).then((b) => decodeAudioTo16kMono(b)).then((a) => { ins.audioData = a; }).catch(() => {});
+  }
+  state.inserts.push(ins);
+  renderInserts();
+}
+async function loadMaterialBox() {
+  if (!els.materialBox) return;
+  try {
+    const res = await fetch("materials/materials.json", { cache: "no-cache" });
+    if (!res.ok) throw new Error("no materials");
+    const list = await res.json();
+    if (!Array.isArray(list) || !list.length) {
+      els.materialBox.innerHTML = "<span class=\"hint\">素材は準備中です。</span>";
+      return;
+    }
+    els.materialBox.innerHTML = "";
+    list.forEach((mat) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      b.textContent = (mat.kind === "image" ? "🖼 " : "🎞 ") + mat.name;
+      b.addEventListener("click", () => { addMaterialInsert(mat); });
+      els.materialBox.appendChild(b);
+    });
+  } catch (e) {
+    els.materialBox.innerHTML = "<span class=\"hint\">素材は準備中です。</span>";
+  }
+}
+loadMaterialBox();
 
 /* ---------- 3. 文字起こし（範囲だけ・Worker） ---------- */
 function getAsrWorker() {
@@ -572,7 +718,6 @@ function highlightFlags(text, marks) {
     }
   };
   mark(/「[^」]+」/g);
-  mark(/[0-9０-９]+(?:[.,][0-9０-９]+)?\s*(?:％|%|円|倍|人|年|位|割|秒)/g);
   Object.keys(marks || {}).forEach((p) => {
     const code = HL_CODES[marks[p]] || 0;
     if (!p || !code) return;
@@ -595,17 +740,25 @@ function splitChunks(text) {
       const parts = [];
       let numBuf = "";
       const flushNum = () => { if (numBuf) { parts.push(numBuf); numBuf = ""; } };
+      const ENDINGS = new Set(["る", "た", "ない", "たい", "ます", "ませ", "ず", "ぬ", "う", "よう", "て", "たり", "つつ", "ながら", "られ", "れる", "させ", "せる", "い", "く", "かっ", "さ", "み", "げ", "しく", "いる", "いた", "います", "いました"]);
+      const OKURI = new Set(["べ", "き", "ぎ", "し", "じ", "ち", "に", "み", "ひ", "び", "り", "い", "え", "け", "げ", "せ", "ぜ", "て", "で", "ね", "め", "れ", "む", "ぶ", "ぐ", "ぬ", "う", "く", "す", "つ", "ふ", "ゆ", "る"]);
+      let lastIsWord = false;
       for (const s of seg.segment(text)) {
         const w = s.segment;
-        if (!w.trim()) { flushNum(); continue; }
+        if (!w.trim()) { flushNum(); lastIsWord = false; continue; }
         if (/^[0-9０-９.,，．%％]+$/.test(w) || (numBuf && /^[億円万千百十人年位割秒分時日月倍本枚個歳]+$/.test(w))) {
           numBuf += w;
+          lastIsWord = false;
           continue;
         }
         flushNum();
-        if (SKIP_TOKENS.has(w)) continue;
-        if (/^[、。，．・！？!?「」『』（）()]+$/.test(w)) continue;
+        // 送り仮名や活用の語尾は、前の単語にくっつけて1つの単語にする（例：支え＋る＝支える、食＋べ＝食べ）
+        if (ENDINGS.has(w) && lastIsWord && parts.length) { parts[parts.length - 1] += w; continue; }
+        if (w.length <= 2 && /^[\u3040-\u309f]+$/.test(w) && OKURI.has(w[0]) && lastIsWord && parts.length && /[\u4e00-\u9fff]$/.test(parts[parts.length - 1])) { parts[parts.length - 1] += w; continue; }
+        if (SKIP_TOKENS.has(w)) { lastIsWord = false; continue; }
+        if (/^[、。，．・！？!?「」『』（）()]+$/.test(w)) { lastIsWord = false; continue; }
         parts.push(w);
+        lastIsWord = true;
       }
       flushNum();
       if (parts.length) return parts;
@@ -825,21 +978,97 @@ async function seekAndWaitFrame(v, t) {
   await seekTo(v, t);
   await new Promise((r) => requestAnimationFrame(() => r()));
 }
-function composeFrame(fctx, W2, H2, bgCtx, bgCanvas, v, t) {
+function srcDims(src) {
+  return [src.videoWidth || src.naturalWidth || 0, src.videoHeight || src.naturalHeight || 0];
+}
+function drawCoverSrc(ctx, src, sw, sh, W, H, scaleMul) {
+  if (!sw || !sh) return;
+  const scale = Math.max(W / sw, H / sh) * (scaleMul || 1);
+  const w = sw * scale, h = sh * scale;
+  ctx.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
+}
+function drawContainSrc(ctx, src, sw, sh, W, H) {
+  if (!sw || !sh) return;
+  const scale = Math.min(W / sw, H / sh);
+  const w = sw * scale, h = sh * scale;
+  ctx.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
+}
+function composeSrc(fctx, W2, H2, bgCtx, bgCanvas, src, seg) {
+  const dims = srcDims(src);
+  if (!dims[0] || !dims[1]) return;
   bgCtx.save();
   try { bgCtx.filter = "blur(10px) brightness(0.8)"; } catch (e) {}
-  drawCover(bgCtx, v, bgCanvas.width, bgCanvas.height, 1.15);
+  drawCoverSrc(bgCtx, src, dims[0], dims[1], bgCanvas.width, bgCanvas.height, 1.15);
   bgCtx.restore();
   fctx.fillStyle = "#000"; fctx.fillRect(0, 0, W2, H2);
   fctx.imageSmoothingEnabled = true;
   fctx.drawImage(bgCanvas, 0, 0, W2, H2);
-  drawContain(fctx, v, W2, H2);
-  const seg = state.segments.find((s) => t >= s.start && t < s.end);
+  drawContainSrc(fctx, src, dims[0], dims[1], W2, H2);
   if (seg && seg.text.trim()) drawSubtitle(fctx, seg.text.trim(), W2, H2, seg.marks || {});
+}
+function buildTimeline(ranges) {
+  const items = [];
+  const byPos = {};
+  (state.inserts || []).forEach((ins) => {
+    const p = Math.max(0, Math.min(ins.pos == null ? ranges.length : ins.pos, ranges.length));
+    (byPos[p] = byPos[p] || []).push(ins);
+  });
+  for (let i = 0; i <= ranges.length; i++) {
+    (byPos[i] || []).forEach((ins) => {
+      if (ins.kind === "image") items.push({ kind: "image", ins, dur: Math.max(1, ins.dur || 3) });
+      else {
+        const d = (ins.el && isFinite(ins.el.duration) && ins.el.duration > 0) ? ins.el.duration : (ins.dur || 0);
+        if (d > 0) items.push({ kind: "video", ins, dur: d });
+      }
+    });
+    if (i < ranges.length) {
+      const r = ranges[i];
+      items.push({ kind: "range", start: r.start, end: r.end, dur: r.end - r.start });
+    }
+  }
+  return items;
+}
+function playMediaItem(el, from, to, onFrame) {
+  return new Promise((resolve, reject) => {
+    if (!el.requestVideoFrameCallback) { reject(new Error("realtime capture unsupported")); return; }
+    let done = false, frameCount = 0;
+    let lastMedia = -1, lastAdvanceAt = performance.now();
+    const startAt = performance.now();
+    const finish = (err) => {
+      if (done) return;
+      done = true;
+      clearInterval(wd);
+      try { el.pause(); } catch (e) {}
+      if (err) reject(err); else resolve();
+    };
+    const wd = setInterval(() => {
+      if (done) return;
+      const nowMs = performance.now();
+      if (frameCount === 0 && nowMs - startAt > 6000) { finish(new Error("playback never started")); return; }
+      if (el.paused) {
+        if (frameCount > 0 && nowMs - lastAdvanceAt > 3000) { playWithRetry(el); lastAdvanceAt = nowMs; }
+        return;
+      }
+      if (el.currentTime === lastMedia) {
+        if (nowMs - lastAdvanceAt > 5000) finish(new Error("playback stalled"));
+      } else { lastMedia = el.currentTime; lastAdvanceAt = nowMs; }
+    }, 500);
+    const cb = (now, meta) => {
+      if (done) return;
+      const mt = meta.mediaTime;
+      frameCount++;
+      if (mt >= from - 0.05 && mt < to) onFrame(mt);
+      if (mt >= to - 0.02 || el.ended) { finish(null); return; }
+      if (!done) el.requestVideoFrameCallback(cb);
+    };
+    seekTo(el, from)
+      .then(async () => { await playWithRetry(el); el.requestVideoFrameCallback(cb); })
+      .catch((e) => finish(e));
+  });
 }
 
 /* WebCodecs書き出し。mode="realtime"：再生しながら取り込む（速い）。mode="step"：1コマずつ止めて取り込む（確実） */
-async function exportWithWebCodecs(v, ranges, totalDur, mode) {
+async function exportWithWebCodecs(v, items, totalDur, mode) {
   const mod = await import("https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.1/build/mp4-muxer.mjs");
   const Muxer = mod.Muxer, ArrayBufferTarget = mod.ArrayBufferTarget;
   if (!Muxer || !ArrayBufferTarget) throw new Error("muxer unavailable");
@@ -849,7 +1078,7 @@ async function exportWithWebCodecs(v, ranges, totalDur, mode) {
   if (!vsup.supported) throw new Error("H.264 encoding not supported");
   let canAudio = false;
   const acfg = { codec: "mp4a.40.2", sampleRate: 48000, numberOfChannels: 1, bitrate: 96000 };
-  if (state.audioData && typeof AudioEncoder !== "undefined") {
+  if (typeof AudioEncoder !== "undefined") {
     try { canAudio = (await AudioEncoder.isConfigSupported(acfg)).supported; } catch (e) { canAudio = false; }
   }
   const muxer = new Muxer({
@@ -885,110 +1114,121 @@ async function exportWithWebCodecs(v, ranges, totalDur, mode) {
     els.exportProgress.value = pct;
     setStatus(els.exportStatus, "書き出し中… " + pct + "%");
   };
+  const itemEl = (it) => (it.kind === "range" ? v : it.ins.el);
+  const itemFrom = (it) => (it.kind === "range" ? it.start : 0);
+  const itemTo = (it) => (it.kind === "range" ? it.end : it.dur);
+  const segAt = (it, mt) => (it.kind === "range" ? (state.segments.find((s) => mt >= s.start && mt < s.end) || null) : null);
+  const waitImg = async (img) => {
+    if (img && !img.complete) await new Promise((r) => { img.onload = r; img.onerror = r; setTimeout(r, 2000); });
+  };
   if (mode === "realtime") {
-    // 再生しながら、表示されたコマをそのまま取り込む（止まったら例外にして、確実な方式に切り替える）
-    if (!v.requestVideoFrameCallback) throw new Error("realtime capture unsupported");
-    await new Promise((resolve, reject) => {
-      let rangeIdx = 0, outOffset = 0, frameCount = 0, done = false;
-      let lastMedia = -1, lastAdvanceAt = performance.now(), lastEncodedMt = -1, lastSlot = -1;
-      const finish = (err) => {
-        if (done) return;
-        done = true;
-        clearInterval(watchdog);
-        try { v.pause(); } catch (e) {}
-        if (err) reject(err); else resolve();
-      };
-      const startAt = performance.now();
-      const watchdog = setInterval(() => {
-        if (done) return;
-        const nowMs = performance.now();
-        if (frameCount === 0 && nowMs - startAt > 6000) { finish(new Error("playback never started")); return; }
-        if (v.paused) {
-          if (frameCount > 0 && nowMs - lastAdvanceAt > 3000) { playWithRetry(v); lastAdvanceAt = nowMs; }
-          return;
+    let outOffset = 0, frameCount = 0, lastSlot = -1;
+    const encodeCurrent = (slot) => {
+      const vf = new VideoFrame(fresh, { timestamp: Math.round(slot * 1000000 / FPS), duration: Math.round(1000000 / FPS) });
+      videoEncoder.encode(vf, { keyFrame: frameCount % 60 === 0 });
+      vf.close();
+      frameCount++;
+    };
+    for (const it of items) {
+      if (encErr) throw encErr;
+      if (it.kind === "image") {
+        await waitImg(it.ins.img);
+        composeSrc(fctx, W, H, bgCtx, bgCanvas, it.ins.img, null);
+        const t0 = performance.now();
+        while (true) {
+          const el2 = (performance.now() - t0) / 1000;
+          const slot = Math.floor((outOffset + Math.min(el2, it.dur)) * FPS);
+          while (lastSlot < slot) { lastSlot++; encodeCurrent(lastSlot); }
+          setPct(outOffset + Math.min(el2, it.dur));
+          if (el2 >= it.dur) break;
+          await new Promise((r) => requestAnimationFrame(r));
         }
-        if (v.currentTime === lastMedia) {
-          if (nowMs - lastAdvanceAt > 5000) finish(new Error("playback stalled"));
-        } else { lastMedia = v.currentTime; lastAdvanceAt = nowMs; }
-      }, 500);
-      const onFrame = (now, meta) => {
-        if (done) return;
-        const r = ranges[rangeIdx];
-        const mt = meta.mediaTime;
-        if (encErr) { finish(encErr); return; }
-        if (mt >= r.start - 0.05 && mt < r.end && videoEncoder.encodeQueueSize <= 10) {
-          // 表示コマを20fpsの等間隔に整えてから変換する（不規則な間隔だと組み立てで失敗するため）
-          const slot = Math.floor((outOffset + (mt - r.start)) * FPS);
-          if (slot > lastSlot) {
+      } else {
+        const el = itemEl(it), from = itemFrom(it), to = itemTo(it);
+        await playMediaItem(el, from, to, (mt) => {
+          const slot = Math.floor((outOffset + (mt - from)) * FPS);
+          if (slot > lastSlot && videoEncoder.encodeQueueSize <= 10) {
             lastSlot = slot;
-            lastEncodedMt = mt;
-            composeFrame(fctx, W, H, bgCtx, bgCanvas, v, mt);
-            const vf = new VideoFrame(fresh, {
-              timestamp: Math.round(slot * 1000000 / FPS),
-              duration: Math.round(1000000 / FPS),
-            });
-            videoEncoder.encode(vf, { keyFrame: frameCount % 60 === 0 });
-            vf.close();
-            frameCount++;
-            setPct(outOffset + Math.max(0, Math.min(mt, r.end) - r.start));
+            composeSrc(fctx, W, H, bgCtx, bgCanvas, el, segAt(it, mt));
+            encodeCurrent(slot);
           }
-        }
-        if (mt >= r.end - 0.02 || v.ended) {
-          outOffset += (r.end - r.start);
-          rangeIdx++;
-          if (rangeIdx >= ranges.length) { finish(null); return; }
-          const nr = ranges[rangeIdx];
-          lastEncodedMt = -1;
-          lastSlot = Math.floor(outOffset * FPS) - 1;
-          try { v.pause(); } catch (e) {}
-          seekTo(v, nr.start).then(() => playWithRetry(v)).catch(() => {});
-        }
-        if (!done) v.requestVideoFrameCallback(onFrame);
-      };
-      seekTo(v, ranges[0].start)
-        .then(async () => { await playWithRetry(v); v.requestVideoFrameCallback(onFrame); })
-        .catch((e) => finish(e));
-    });
+          setPct(outOffset + Math.max(0, Math.min(mt, to) - from));
+        });
+      }
+      outOffset += it.dur;
+    }
   } else {
     try { v.pause(); } catch (e) {}
     const SFPS = 15;
-    const totalFrames = ranges.reduce((a, r) => a + Math.max(1, Math.round((r.end - r.start) * SFPS)), 0);
-    let frameIdx = 0, doneSecBase = 0;
-    for (const r of ranges) {
-      const n = Math.max(1, Math.round((r.end - r.start) * SFPS));
-      for (let k = 0; k < n; k++) {
-        if (encErr) throw encErr;
-        const srcT = Math.min(r.start + k / SFPS, Math.max(r.start, r.end - 0.01));
-        await seekAndWaitFrame(v, srcT);
-        composeFrame(fctx, W, H, bgCtx, bgCanvas, v, srcT);
-        const vf = new VideoFrame(fresh, { timestamp: Math.round(frameIdx * 1000000 / SFPS), duration: Math.round(1000000 / SFPS) });
-        videoEncoder.encode(vf, { keyFrame: frameIdx % 60 === 0 });
-        vf.close();
-        frameIdx++;
-        setPct(doneSecBase + (k + 1) / SFPS);
-        while (videoEncoder.encodeQueueSize > 8) await new Promise((r2) => setTimeout(r2, 20));
+    let frameIdx = 0, doneBase = 0;
+    for (const it of items) {
+      const n = Math.max(1, Math.round(it.dur * SFPS));
+      if (it.kind === "image") {
+        await waitImg(it.ins.img);
+        composeSrc(fctx, W, H, bgCtx, bgCanvas, it.ins.img, null);
+        for (let k = 0; k < n; k++) {
+          if (encErr) throw encErr;
+          const vf = new VideoFrame(fresh, { timestamp: Math.round(frameIdx * 1000000 / SFPS), duration: Math.round(1000000 / SFPS) });
+          videoEncoder.encode(vf, { keyFrame: frameIdx % 60 === 0 });
+          vf.close();
+          frameIdx++;
+          setPct(doneBase + (k + 1) / SFPS);
+          while (videoEncoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 20));
+        }
+      } else {
+        const el = itemEl(it), from = itemFrom(it);
+        try { el.pause(); } catch (e) {}
+        for (let k = 0; k < n; k++) {
+          if (encErr) throw encErr;
+          const srcT = Math.min(from + k / SFPS, Math.max(from, from + it.dur - 0.01));
+          await seekAndWaitFrame(el, srcT);
+          composeSrc(fctx, W, H, bgCtx, bgCanvas, el, segAt(it, srcT));
+          const vf = new VideoFrame(fresh, { timestamp: Math.round(frameIdx * 1000000 / SFPS), duration: Math.round(1000000 / SFPS) });
+          videoEncoder.encode(vf, { keyFrame: frameIdx % 60 === 0 });
+          vf.close();
+          frameIdx++;
+          setPct(doneBase + (k + 1) / SFPS);
+          while (videoEncoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 20));
+        }
       }
-      doneSecBase += (r.end - r.start);
+      doneBase += it.dur;
     }
   }
   await videoEncoder.flush();
   if (encErr) throw encErr;
   if (audioEncoder) {
-    const src = state.audioData;
-    const parts = ranges.map((r) => [
-      Math.max(0, Math.floor(r.start * 16000)),
-      Math.min(src.length, Math.ceil(r.end * 16000)),
-    ]);
-    const total48 = parts.reduce((acc, pr) => acc + Math.floor((pr[1] - pr[0]) * 3), 0);
+    const pieces = [];
+    items.forEach((it) => {
+      if (it.kind === "range") {
+        const src = state.audioData;
+        if (src) {
+          const a = Math.max(0, Math.floor(it.start * 16000)), b = Math.min(src.length, Math.ceil(it.end * 16000));
+          pieces.push({ data: src.subarray(a, b), dur: it.dur });
+        } else pieces.push({ data: null, dur: it.dur });
+      } else if (it.kind === "video") {
+        const src = it.ins.audioData;
+        if (src) {
+          const b = Math.min(src.length, Math.ceil(it.dur * 16000));
+          pieces.push({ data: src.subarray(0, b), dur: it.dur });
+        } else pieces.push({ data: null, dur: it.dur });
+      } else {
+        pieces.push({ data: null, dur: it.dur });
+      }
+    });
+    const total48 = pieces.reduce((acc, p) => acc + Math.round(p.dur * 48000), 0);
     const pcm = new Float32Array(total48);
     let off = 0;
-    parts.forEach((pr) => {
-      const a = pr[0], b = pr[1];
-      const n48 = Math.floor((b - a) * 3);
-      for (let i = 0; i < n48; i++) {
-        const pos = a + i / 3;
-        const i0 = Math.floor(pos), i1 = Math.min(i0 + 1, src.length - 1);
-        pcm[off + i] = src[i0] + (src[i1] - src[i0]) * (pos - i0);
+    pieces.forEach((p) => {
+      const n48 = Math.round(p.dur * 48000);
+      if (p.data && p.data.length) {
+        const src = p.data;
+        for (let i = 0; i < n48; i++) {
+          const pos = i / 3;
+          const i0 = Math.floor(pos);
+          if (i0 >= src.length) break;
+          const i1 = Math.min(i0 + 1, src.length - 1);
+          pcm[off + i] = src[i0] + (src[i1] - src[i0]) * (pos - i0);
+        }
       }
       off += n48;
     });
@@ -1015,7 +1255,9 @@ async function exportWithWebCodecs(v, ranges, totalDur, mode) {
 els.exportBtn.addEventListener("click", async () => {
   if (!state.url || !state.ranges.length) { setStatus(els.exportStatus, "先に動画と切り抜き範囲を指定してください。", "warn"); return; }
   const ranges = state.ranges.map((r) => ({ start: r.start, end: r.end })).sort((a, b) => a.start - b.start);
-  const totalDur = ranges.reduce((a, r) => a + (r.end - r.start), 0);
+  const rangeDur = ranges.reduce((a, r) => a + (r.end - r.start), 0);
+  const items = buildTimeline(ranges);
+  const totalDur = items.reduce((a, it) => a + it.dur, 0);
   let v = els.srcVideo;
   let restoreMute = false;
   const prevMuted = v.muted;
@@ -1047,7 +1289,7 @@ els.exportBtn.addEventListener("click", async () => {
     const progressOnly = () => {
       const t = v.currentTime;
       const done = outElapsed + Math.max(0, Math.min(t, curRange.end) - curRange.start);
-      const pct = totalDur > 0 ? Math.min(100, Math.floor((done / totalDur) * 100)) : 0;
+      const pct = rangeDur > 0 ? Math.min(100, Math.floor((done / rangeDur) * 100)) : 0;
       els.exportProgress.value = pct;
       setStatus(els.exportStatus, "書き出し中… " + pct + "%");
     };
@@ -1061,7 +1303,7 @@ els.exportBtn.addEventListener("click", async () => {
       els.exportLog.textContent = "";
       const modes = ["realtime", "step"];
       for (let mi = 0; mi < modes.length && !wcBlob; mi++) {
-        try { wcBlob = await exportWithWebCodecs(v, ranges, totalDur, modes[mi]); }
+        try { wcBlob = await exportWithWebCodecs(v, items, totalDur, modes[mi]); }
         catch (e) {
           console.error(e); wcBlob = null;
           els.exportLog.textContent += "方式" + (mi + 1) + "は失敗：" + (e && e.message ? e.message : e) + "\n";
