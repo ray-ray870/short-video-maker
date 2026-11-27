@@ -286,50 +286,87 @@ async function decodeAudioTo16kMono(file) {
   } finally { ctx.close(); }
 }
 
+function getAsrWorker() {
+  if (state.asrWorker) return state.asrWorker;
+  const code = [
+    'import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js";',
+    "env.allowLocalModels = false;",
+    "let transcriber = null;",
+    "self.onmessage = async (e) => {",
+    "  const audio = e.data.audio;",
+    "  try {",
+    "    if (!transcriber) {",
+    '      transcriber = await pipeline("automatic-speech-recognition", "Xenova/whisper-base", {',
+    "        quantized: true,",
+    "        progress_callback: (p) => self.postMessage({ type: 'progress', data: p }),",
+    "      });",
+    "    }",
+    "    self.postMessage({ type: 'ready' });",
+    '    const out = await transcriber(audio, { language: "japanese", task: "transcribe", return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 });',
+    "    self.postMessage({ type: 'result', data: out });",
+    "  } catch (err) {",
+    "    self.postMessage({ type: 'error', message: String((err && err.message) || err) });",
+    "  }",
+    "};",
+  ].join("\n");
+  const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+  state.asrWorker = new Worker(url, { type: "module" });
+  return state.asrWorker;
+}
+
+function transcribeWithWorker(audio) {
+  return new Promise((resolve, reject) => {
+    const worker = getAsrWorker();
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const sec = Math.floor((Date.now() - startedAt) / 1000);
+      if (state.asrPhase === "model") {
+        setStatus(els.asrStatus, "音声認識モデルを準備しています…（初回はダウンロードで数分かかることがあります／経過 " + sec + " 秒）");
+      } else if (state.asrPhase === "run") {
+        setStatus(els.asrStatus, "文字起こし中です…（経過 " + sec + " 秒／画面はそのまま待っていてください）");
+      }
+    }, 1000);
+    const cleanup = () => { clearInterval(timer); worker.removeEventListener("message", onMsg); worker.removeEventListener("error", onErr); };
+    const onMsg = (e) => {
+      const m = e.data || {};
+      if (m.type === "progress") {
+        state.asrPhase = "model";
+        const p = m.data;
+        if (p && p.status === "progress" && typeof p.progress === "number") {
+          els.asrProgress.value = p.progress;
+          setStatus(els.asrStatus, "モデルをダウンロード中：" + (p.file || "") + " " + Math.round(p.progress) + "%");
+        }
+      } else if (m.type === "ready") {
+        state.asrPhase = "run";
+      } else if (m.type === "result") {
+        cleanup(); resolve(m.data);
+      } else if (m.type === "error") {
+        cleanup(); reject(new Error(m.message));
+      }
+    };
+    const onErr = (e) => { cleanup(); reject(new Error(e.message || "ワーカーでエラーが起きました")); };
+    worker.addEventListener("message", onMsg);
+    worker.addEventListener("error", onErr);
+    state.asrPhase = "model";
+    const copy = new Float32Array(audio);
+    worker.postMessage({ audio: copy }, [copy.buffer]);
+  });
+}
+
 els.transcribeBtn.addEventListener("click", async () => {
   if (!state.file) return;
-  let T = state.transformersLib;
-  if (!T) {
-    try {
-      setStatus(els.asrStatus, "文字起こしライブラリを読み込んでいます…");
-      T = await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js");
-      state.transformersLib = T;
-    } catch (e) {
-      console.error(e);
-      setStatus(els.asrStatus, "文字起こしライブラリを読み込めませんでした。通信環境を確認して、ページを再読み込みしてください。", "warn");
-      return;
-    }
-  }
   els.transcribeBtn.disabled = true;
   els.asrProgress.style.display = "block";
   els.asrProgress.value = 0;
   try {
-    if (!state.transcriber) {
-      T.env.allowLocalModels = false;
-      setStatus(els.asrStatus, "音声認識モデルを準備しています…（初回はダウンロードで数分かかることがあります）");
-      state.transcriber = await T.pipeline("automatic-speech-recognition", "Xenova/whisper-small", {
-        quantized: true,
-        progress_callback: (p) => {
-          if (p && p.status === "progress" && typeof p.progress === "number") {
-            els.asrProgress.value = p.progress;
-            setStatus(els.asrStatus, "モデルをダウンロード中：" + (p.file || "") + " " + Math.round(p.progress) + "%");
-          } else if (p && p.status === "ready") {
-            setStatus(els.asrStatus, "モデルの準備ができました。文字起こしを始めます…");
-          }
-        },
-      });
-    }
     setStatus(els.asrStatus, "音声を読み込んでいます…");
     let audio = state.audioData;
     if (!audio) {
       try { audio = await state.audioPromise; }
       catch (e) { audio = await decodeAudioTo16kMono(state.file); }
     }
-    setStatus(els.asrStatus, "文字起こし中です…（動画の長さによっては時間がかかります）");
-    const out = await state.transcriber(audio, {
-      language: "japanese", task: "transcribe",
-      return_timestamps: true, chunk_length_s: 30, stride_length_s: 5,
-    });
+    setStatus(els.asrStatus, "音声認識モデルを準備しています…（初回はダウンロードで数分かかることがあります）");
+    const out = await transcribeWithWorker(audio);
     const chunks = (out && out.chunks) ? out.chunks : [];
     state.segments = chunks
       .map((c) => ({
