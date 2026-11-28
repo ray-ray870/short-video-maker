@@ -155,7 +155,7 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v52）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v53）</p>
 </header>
 
 <div class="wrap">
@@ -172,7 +172,7 @@
       <button type="button" id="restoreBtn">復元する</button>
       <button type="button" id="discardSaveBtn" class="mini danger">保存を消す</button>
     </div>
-    <p class="hint">復元したら、ステップ1で同じ動画を選び直してください。範囲・字幕・設定がそのまま使えます。（ファイルから挿入した素材だけは保存されません）</p>
+    <p class="hint">復元したら、ステップ1で同じ動画を選び直してください。範囲・字幕・設定がそのまま使えます。（動画が端末に保存されている場合は、開いたときに自動で復元されます）</p>
   </section>
   <div class="layout">
     <div class="col-preview">
@@ -205,6 +205,8 @@
         <label class="file-btn" for="fileInput">📁 動画ファイルを選ぶ</label>
         <input type="file" id="fileInput" accept="video/*">
         <p class="hint" id="fileName">まだ選ばれていません</p>
+        <p class="hint" id="savedVideoNote" style="display:none"></p>
+        <button type="button" id="deleteSavedVideoBtn" class="mini danger" style="display:none">保存した動画を消す</button>
       </section>
 
       <section class="card">
@@ -318,6 +320,7 @@
           <li>処理は<strong>この端末の中だけ</strong>で行われます。動画が外部のサーバーに送られることはありません。</li>
           <li>初回の文字起こしは、音声認識モデル（精度優先は約250MB／速さ優先は約70MB）のダウンロードで数分かかることがあります。Wi-Fi推奨です。</li>
           <li>ナレーションで作るときは、読み上げ用のモデル（約95MB）を初回だけダウンロードします。読み上げも、この端末の中で行われます。</li>
+          <li>選んだ動画は<strong>この端末の中に保存</strong>され、アプリを開き直しても作業の続きから始められます（保存先も端末の中だけです）。</li>
           <li>文字起こしは選んだ範囲だけなので、長い動画でも大丈夫です。</li>
           <li>字幕の自動文字起こしには誤字が出ることがあります。文字起こしの結果のところで直してから書き出してください。</li>
           <li>範囲と範囲のつなぎ目では、一瞬だけ映像が止まって見えることがあります。</li>
@@ -334,7 +337,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const els = {
-  fileInput: $("fileInput"), fileName: $("fileName"), srcVideo: $("srcVideo"),
+  fileInput: $("fileInput"), fileName: $("fileName"), srcVideo: $("srcVideo"), savedVideoNote: $("savedVideoNote"), deleteSavedVideoBtn: $("deleteSavedVideoBtn"),
   markStartBtn: $("markStartBtn"), markEndBtn: $("markEndBtn"),
   rangeStart: $("rangeStart"), rangeEnd: $("rangeEnd"), addRangeBtn: $("addRangeBtn"),
   rangeStatus: $("rangeStatus"), rangeList: $("rangeList"), rangeTotal: $("rangeTotal"),
@@ -355,7 +358,7 @@ const els = {
   narrGenBtn: $("narrGenBtn"), narrProgress: $("narrProgress"), narrStatus: $("narrStatus"),
 };
 const state = {
-  file: null, url: null, ranges: [], segments: [], inserts: [],
+  file: null, fileName: "", url: null, ranges: [], segments: [], inserts: [],
   bgMode: "blur", topText: "", topMarks: {}, topColor: "white",
   audioData: null, audioPromise: null, asrWorker: null, asrPhase: "",
   audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
@@ -397,23 +400,74 @@ async function decodeAudioTo16kMono(file) {
   } finally { ctx.close(); }
 }
 
-els.fileInput.addEventListener("change", async () => {
-  const f = els.fileInput.files && els.fileInput.files[0];
-  if (!f) return;
+/* ---------- 動画ファイルの保存（IndexedDB：端末の中だけ） ---------- */
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open("svm-files-preview", 1);
+    rq.onupgradeneeded = () => { try { rq.result.createObjectStore("files"); } catch (e) {} };
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbPut(key, val) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").put(val, key);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction("files").objectStore("files").get(key);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbDel(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").delete(key);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+function showSavedVideoNote(stored) {
+  if (!els.savedVideoNote) return;
+  if (stored && stored.blob) {
+    const mb = (stored.blob.size / 1024 / 1024).toFixed(1);
+    els.savedVideoNote.textContent = "動画はこの端末の中に保存されています（" + mb + " MB）。次回開いても、そのまま続きから使えます。";
+    els.savedVideoNote.style.display = "block";
+    els.deleteSavedVideoBtn.style.display = "inline-block";
+  } else {
+    els.savedVideoNote.style.display = "none";
+    els.deleteSavedVideoBtn.style.display = "none";
+  }
+}
+els.deleteSavedVideoBtn.addEventListener("click", async () => {
+  try { await idbDel("mainVideo"); } catch (e) {}
+  showSavedVideoNote(null);
+  setStatus(els.rangeStatus, "保存した動画を消しました。今開いている動画はそのまま使えます。", "ok");
+});
+async function loadVideoFile(blob, name) {
   if (state.url) URL.revokeObjectURL(state.url);
-  state.file = f;
+  state.file = blob;
+  state.fileName = name || "動画";
   state.inserts.forEach((ins) => {
     try { URL.revokeObjectURL(ins.url); } catch (e) {}
     if (ins.el && ins.el.parentNode) ins.el.parentNode.removeChild(ins.el);
   });
   state.inserts = [];
-  // 選んだファイルをその場で読み込み直してアプリ側のデータとして保持する。
+  // 読み込んだデータをアプリ側のデータとして保持する。
   // 端末から直接渡されたファイルは、Androidでは「外部データ」扱いで映像の取り込みを拒否されることがあるため
   try {
-    const buf = await f.arrayBuffer();
-    state.url = URL.createObjectURL(new Blob([buf], { type: f.type || "video/mp4" }));
+    const buf = await blob.arrayBuffer();
+    state.url = URL.createObjectURL(new Blob([buf], { type: blob.type || "video/mp4" }));
   } catch (e) {
-    state.url = URL.createObjectURL(f);
+    state.url = URL.createObjectURL(blob);
   }
   state.ranges = [];
   state.segments = [];
@@ -423,10 +477,9 @@ els.fileInput.addEventListener("change", async () => {
   els.srcVideo.src = state.url;
   els.exportVideo.src = state.url;
   try { els.exportVideo.load(); } catch (e) {}
-  els.fileName.textContent = "選択中：" + f.name;
+  els.fileName.textContent = "選択中：" + state.fileName;
   els.addRangeBtn.disabled = false;
   els.segList.innerHTML = "";
-
   els.resultCard.style.display = "none";
   setStatus(els.rangeStatus, "プレビューを再生して、範囲を指定してください。");
   setStatus(els.asrStatus, "音声を準備しています…");
@@ -435,7 +488,7 @@ els.fileInput.addEventListener("change", async () => {
   updateActionButtons();
   // ファイルの読み取り権限が切れる前に、その場で音声を読み込んでおく（Android対策）
   state.audioData = null;
-  state.audioPromise = decodeAudioTo16kMono(f).then((a) => {
+  state.audioPromise = decodeAudioTo16kMono(blob).then((a) => {
     state.audioData = a;
     setStatus(els.asrStatus, "範囲を追加して「文字起こしする」を押してください。初回はモデルのダウンロードで数分かかることがあります。");
     return a;
@@ -443,6 +496,22 @@ els.fileInput.addEventListener("change", async () => {
   state.audioPromise.catch(() => {
     setStatus(els.asrStatus, "音声の読み込みに失敗しました。もう一度、動画を選び直してみてください。", "warn");
   });
+}
+els.fileInput.addEventListener("change", async () => {
+  const f = els.fileInput.files && els.fileInput.files[0];
+  if (!f) return;
+  await loadVideoFile(f, f.name);
+  // 動画そのものも端末の中に保存する（次回開いたときに自動で戻すため）
+  try {
+    if (navigator.storage && navigator.storage.persist) { try { await navigator.storage.persist(); } catch (e) {} }
+    await idbPut("mainVideo", { blob: f, name: f.name });
+    showSavedVideoNote({ blob: f });
+  } catch (e) {
+    if (els.savedVideoNote) {
+      els.savedVideoNote.textContent = "動画の保存はできませんでした（端末の空き容量が足りない可能性があります）。作業の途中経過だけ保存されます。";
+      els.savedVideoNote.style.display = "block";
+    }
+  }
 });
 
 /* ---------- 2. 切り抜き範囲（複数） ---------- */
@@ -2383,7 +2452,7 @@ function saveState() {
       if (!state.ranges.length && !state.segments.length && !(state.topText || "").trim() && !(state.boxes || []).some((b) => (b.text || "").trim())) return;
       const data = {
         savedAt: new Date().toISOString(),
-        fileName: state.file ? state.file.name : "",
+        fileName: state.fileName || "",
         ranges: state.ranges,
         segments: state.segments.map((s) => ({ start: s.start, end: s.end, text: s.text, range: s.range, marks: s.marks || {} })),
         mode: state.mode || "asr",
@@ -2408,7 +2477,7 @@ function loadSave() {
     return d;
   } catch (e) { return null; }
 }
-async function restoreSave() {
+async function restoreSave(withVideo) {
   const d = loadSave();
   if (!d) return;
   state.mode = d.mode === "narr" ? "narr" : "asr";
@@ -2444,16 +2513,23 @@ async function restoreSave() {
   renderInserts();
   updateActionButtons();
   els.restoreBar.style.display = "none";
-  setStatus(els.rangeStatus, "保存していた作業を復元しました。同じ動画（" + (d.fileName || "") + "）を選んでください。", "ok");
+  setStatus(els.rangeStatus, withVideo ? "前回の動画と作業を復元しました。" : "保存していた作業を復元しました。同じ動画（" + (d.fileName || "") + "）を選んでください。", "ok");
 }
 els.restoreBtn.addEventListener("click", () => { restoreSave(); });
 els.discardSaveBtn.addEventListener("click", () => {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
   els.restoreBar.style.display = "none";
 });
-(function initRestoreBar() {
+(async function initRestore() {
+  let stored = null;
+  try { stored = await idbGet("mainVideo"); } catch (e) {}
   const d = loadSave();
-  if (d && ((d.ranges && d.ranges.length) || (d.segments && d.segments.length))) {
+  const hasWork = d && ((d.ranges && d.ranges.length) || (d.segments && d.segments.length) || (d.boxes || []).some((b) => (b.text || "").trim()));
+  if (stored && stored.blob) {
+    await loadVideoFile(stored.blob, stored.name || "保存した動画");
+    showSavedVideoNote(stored);
+    if (hasWork) await restoreSave(true);
+  } else if (d && ((d.ranges && d.ranges.length) || (d.segments && d.segments.length))) {
     const when = d.savedAt ? new Date(d.savedAt) : null;
     els.restoreInfo.textContent = "動画：" + (d.fileName || "不明") + "／範囲 " + (d.ranges ? d.ranges.length : 0) + " か所・字幕 " + (d.segments ? d.segments.length : 0) + " 件" + (when ? "／" + when.toLocaleString("ja-JP") + " 保存" : "");
     els.restoreBar.style.display = "block";
