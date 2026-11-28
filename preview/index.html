@@ -48,6 +48,14 @@
     padding:18px 16px; box-shadow:0 2px 12px rgba(59,33,99,.07);
   }
   .col-main > .card + .card, .col-preview > .card + .card{ margin-top:14px; }
+  .card.s1{ background:#f3eafd; border-color:#d9c8f5; }
+  .card.s2{ background:#fdeef4; border-color:#f6c9da; }
+  .card.s3{ background:#fff7db; border-color:#f0df9a; }
+  .card.s4{ background:#e9f9ee; border-color:#b5e3c3; }
+  .card.s1 h2 .step{ background:linear-gradient(135deg,#7a3fa3,#9b59c9); }
+  .card.s2 h2 .step{ background:linear-gradient(135deg,#d6336c,#e85d8a); box-shadow:0 1px 4px rgba(214,51,108,.35); }
+  .card.s3 h2 .step{ background:linear-gradient(135deg,#d9a400,#e6bc1a); box-shadow:0 1px 4px rgba(217,164,0,.35); }
+  .card.s4 h2 .step{ background:linear-gradient(135deg,#1e9e57,#35b96b); box-shadow:0 1px 4px rgba(30,158,87,.35); }
   .wrap > .card{ margin-bottom:14px; }
   .card h2{ margin:0 0 10px; font-size:18px; line-height:1.4; }
   .card h2 .step{
@@ -166,7 +174,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v66）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v67）</p>
     </div>
   </div>
 </header>
@@ -207,7 +215,7 @@
     </div>
 
     <div class="col-main">
-      <section class="card">
+      <section class="card s1">
         <h2><span class="step">1</span>動画を選ぶ</h2>
         <label class="file-btn" for="fileInput">📁 動画ファイルを選ぶ</label>
         <input type="file" id="fileInput" accept="video/*">
@@ -216,7 +224,7 @@
         <button type="button" id="deleteSavedVideoBtn" class="mini danger" style="display:none">保存した動画を消す</button>
       </section>
 
-      <section class="card">
+      <section class="card s2">
         <h2><span class="step">2</span>切り抜き範囲を決める（何か所でもOK）</h2>
         <p class="hint">プレビューを再生して、使いたい場面の「ここから」「ここまで」を押してください。数字で直接直すこともできます。1か所だけでも大丈夫です。</p>
         <div class="row" style="margin-top:10px;">
@@ -239,7 +247,7 @@
         <p class="hint" id="rangeTotal"></p>
       </section>
 
-      <section class="card">
+      <section class="card s3">
         <h2><span class="step">3</span>セリフを用意する</h2>
         <div class="mode-row">
           <button type="button" id="modeAsrBtn" class="sel">🎙 動画の音声を使う</button>
@@ -285,7 +293,7 @@
         </div>
       </section>
 
-      <section class="card">
+      <section class="card s4">
         <h2><span class="step">4</span>ショート動画を作る</h2>
         <div class="fld">
           <span class="fld-label">背景（横長動画の上下の部分）</span>
