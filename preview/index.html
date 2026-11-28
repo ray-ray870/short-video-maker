@@ -155,7 +155,7 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v51）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v52）</p>
 </header>
 
 <div class="wrap">
@@ -938,12 +938,22 @@ function syncNarrationSegments() {
   state.boxes.forEach((b) => {
     const text = (b.text || "").trim();
     if (!text) return;
-    let acc = 0;
-    state.ranges.forEach((r, i) => {
-      const d = r.end - r.start;
-      const a = Math.max(b.start, acc), e = Math.min(b.end, acc + d);
-      if (e > a) segs.push({ start: r.start + (a - acc), end: r.start + (e - acc), text: b.text, range: i, marks: b.marks || {} });
-      acc += d;
+    // 長い文章は字幕の区切り（3〜4行）ごとに分け、BOXの時間に文字数配分で割り当てる
+    const parts = splitTextForSubtitle(text);
+    const totalCh = parts.reduce((x, p) => x + p.length, 0) || 1;
+    const boxDur = Math.max(0.01, b.end - b.start);
+    let chAcc = 0;
+    parts.forEach((p) => {
+      const jA = b.start + boxDur * (chAcc / totalCh);
+      chAcc += p.length;
+      const jB = b.start + boxDur * (chAcc / totalCh);
+      let acc = 0;
+      state.ranges.forEach((r, i) => {
+        const d = r.end - r.start;
+        const a = Math.max(jA, acc), e = Math.min(jB, acc + d);
+        if (e > a) segs.push({ start: r.start + (a - acc), end: r.start + (e - acc), text: p, range: i, marks: b.marks || {} });
+        acc += d;
+      });
     });
   });
   segs.sort((x, y) => x.start - y.start);
