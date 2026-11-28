@@ -178,7 +178,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v72）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v73）</p>
     </div>
   </div>
 </header>
@@ -312,8 +312,11 @@
         </div>
         <div class="fld">
           <span class="fld-label">🎵 BGM（動画の最初から最後まで流れます）</span>
-          <div id="bgmList"></div>
-          <p class="hint">曲はアプリの中で自動で作っているので、著作権の心配はありません。「▶️ 視聴」で聞いてから選んでください。選んだ曲は動画の最初から最後まで、小さめに流れます。</p>
+          <details id="bgmDetails">
+            <summary>曲を選ぶ（今：<span id="bgmNow">なし（BGMなし）</span>）</summary>
+            <div id="bgmList"></div>
+          </details>
+          <p class="hint">「▶️ 視聴」で聞いてから選んでください。選んだ曲は動画の最初から最後まで、小さめに流れます。</p>
         </div>
         <div class="fld">
           <span class="fld-label">✏️ 上の文字（任意・入力）</span>
@@ -402,7 +405,7 @@ const els = {
   exportVideo: $("exportVideo"),
   modeAsrBtn: $("modeAsrBtn"), modeNarrBtn: $("modeNarrBtn"),
   asrPanel: $("asrPanel"), narrPanel: $("narrPanel"),
-  narrVoice: $("narrVoice"), subOnBtn: $("subOnBtn"), subOffBtn: $("subOffBtn"), mixOffBtn: $("mixOffBtn"), mixOnBtn: $("mixOnBtn"), bgmList: $("bgmList"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
+  narrVoice: $("narrVoice"), subOnBtn: $("subOnBtn"), subOffBtn: $("subOffBtn"), mixOffBtn: $("mixOffBtn"), mixOnBtn: $("mixOnBtn"), bgmList: $("bgmList"), bgmNow: $("bgmNow"), bgmDetails: $("bgmDetails"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
   narrGenBtn: $("narrGenBtn"), narrProgress: $("narrProgress"), narrStatus: $("narrStatus"),
 };
 const state = {
@@ -2243,8 +2246,9 @@ function renderBgmList() {
   if (!els.bgmList) return;
   if (state.bgmId !== "none" && !BGM_TRACKS.some((t) => t.id === state.bgmId)) state.bgmId = "none";
   const rows = [{ id: "none", name: "なし（BGMなし）" }].concat(BGM_TRACKS);
+  if (els.bgmNow) { const cur = rows.find((t) => t.id === state.bgmId); els.bgmNow.textContent = cur ? cur.name : "なし（BGMなし）"; }
   els.bgmList.innerHTML = rows.map((t) => '<div class="bgm-row' + (state.bgmId === t.id ? ' sel' : '') + '" data-bgm="' + t.id + '"><span class="bgm-name">' + t.name + '</span>' + (t.id !== "none" ? '<button type="button" class="bgm-play" data-play="' + t.id + '">' + (bgmPlayingId === t.id ? "⏸ 止める" : "▶️ 視聴") + '</button>' : '') + '</div>').join("");
-  els.bgmList.querySelectorAll("[data-bgm]").forEach((row) => row.addEventListener("click", () => { state.bgmId = row.getAttribute("data-bgm"); saveState(); renderBgmList(); }));
+  els.bgmList.querySelectorAll("[data-bgm]").forEach((row) => row.addEventListener("click", () => { state.bgmId = row.getAttribute("data-bgm"); saveState(); if (els.bgmDetails) els.bgmDetails.open = false; renderBgmList(); }));
   els.bgmList.querySelectorAll("[data-play]").forEach((btn) => btn.addEventListener("click", (ev) => { ev.stopPropagation(); const id = btn.getAttribute("data-play"); if (bgmPlayingId === id) stopBgmPreview(); else playBgmPreview(id); }));
 }
 function stopBgmPreview() {
