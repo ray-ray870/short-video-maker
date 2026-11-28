@@ -155,7 +155,7 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v54）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v55）</p>
 </header>
 
 <div class="wrap">
@@ -262,6 +262,8 @@
         <label for="readingDict" style="margin-top:12px;">📖 読み方の指定（漢字の読みを決められます）</label>
         <textarea id="readingDict" rows="3" placeholder="楓=かえで"></textarea>
         <p class="hint">1行に1つ、「言葉=よみがな」の形で書いてください。字幕には元の言葉のまま出て、読み上げだけが指定の読みになります。人の名前などの漢字に使ってください。言葉ごと（例：ひなたぼっこ中=ひなたぼっこちゅう）でも指定できます。</p>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:600;"><input type="checkbox" id="narrSubToggle" checked style="width:20px;height:20px;"> 字幕も表示する</label>
+        <p class="hint">チェックを外すと、読み上げの声だけで、字幕は出ません。</p>
         <div class="seg-list" id="boxList"></div>
         <button type="button" class="secondary" id="addBoxBtn" style="margin-top:10px;">＋ BOXを追加する</button>
         <button id="narrGenBtn" style="margin-top:10px;">🗣 ナレーション音声を作る</button>
@@ -357,7 +359,7 @@ const els = {
   exportVideo: $("exportVideo"),
   modeAsrBtn: $("modeAsrBtn"), modeNarrBtn: $("modeNarrBtn"),
   asrPanel: $("asrPanel"), narrPanel: $("narrPanel"),
-  narrVoice: $("narrVoice"), readingDict: $("readingDict"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
+  narrVoice: $("narrVoice"), readingDict: $("readingDict"), narrSubToggle: $("narrSubToggle"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
   narrGenBtn: $("narrGenBtn"), narrProgress: $("narrProgress"), narrStatus: $("narrStatus"),
 };
 const state = {
@@ -365,7 +367,7 @@ const state = {
   bgMode: "blur", topText: "", topMarks: {}, topColor: "white",
   audioData: null, audioPromise: null, asrWorker: null, asrPhase: "",
   audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
-  mode: "asr", boxes: [], narrVoice: "female", readingDict: "", ttsWorker: null,
+  mode: "asr", boxes: [], narrVoice: "female", readingDict: "", narrNoSub: false, ttsWorker: null,
   narrPcm16: null, narrReady: false, tokenizer: null, tokenizerPromise: null,
 };
 const fmt = (s) => {
@@ -993,6 +995,7 @@ els.modeAsrBtn.addEventListener("click", () => setMode("asr"));
 els.modeNarrBtn.addEventListener("click", () => setMode("narr"));
 els.narrVoice.addEventListener("change", () => { state.narrVoice = els.narrVoice.value; state.narrReady = false; saveState(); });
 els.readingDict.addEventListener("input", () => { state.readingDict = els.readingDict.value; state.narrReady = false; saveState(); });
+els.narrSubToggle.addEventListener("change", () => { state.narrNoSub = !els.narrSubToggle.checked; syncNarrationSegments(); saveState(); });
 
 function fmtBoxTime(s) {
   s = Math.max(0, Math.round(s || 0));
@@ -1007,6 +1010,7 @@ function parseBoxTime(str, fallback) {
 }
 function syncNarrationSegments() {
   if (state.mode !== "narr") return;
+  if (state.narrNoSub) { state.segments = []; return; }
   const segs = [];
   state.boxes.forEach((b) => {
     const text = (b.text || "").trim();
@@ -2478,6 +2482,7 @@ function saveState() {
         mode: state.mode || "asr",
         narrVoice: state.narrVoice || "female",
         readingDict: state.readingDict || "",
+        narrNoSub: state.narrNoSub || false,
         boxes: (state.boxes || []).map((b) => ({ start: b.start, end: b.end, text: b.text || "", marks: b.marks || {} })),
         bgMode: state.bgMode || "blur",
         topText: state.topText || "",
@@ -2510,6 +2515,8 @@ async function restoreSave(withVideo) {
   if (els.narrVoice) els.narrVoice.value = state.narrVoice;
   state.readingDict = d.readingDict || "";
   if (els.readingDict) els.readingDict.value = state.readingDict;
+  state.narrNoSub = !!d.narrNoSub;
+  if (els.narrSubToggle) els.narrSubToggle.checked = !state.narrNoSub;
   state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", marks: b.marks || {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
   state.narrReady = false;
   state.narrPcm16 = null;
