@@ -155,7 +155,7 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v53）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v54）</p>
 </header>
 
 <div class="wrap">
@@ -259,6 +259,9 @@
           <option value="male">男性の声（明るめ）</option>
           <option value="high">女性の声（高め）</option>
         </select>
+        <label for="readingDict" style="margin-top:12px;">📖 読み方の指定（漢字の読みを決められます）</label>
+        <textarea id="readingDict" rows="3" placeholder="楓=かえで"></textarea>
+        <p class="hint">1行に1つ、「言葉=よみがな」の形で書いてください。字幕には元の言葉のまま出て、読み上げだけが指定の読みになります。人の名前などの漢字に使ってください。言葉ごと（例：ひなたぼっこ中=ひなたぼっこちゅう）でも指定できます。</p>
         <div class="seg-list" id="boxList"></div>
         <button type="button" class="secondary" id="addBoxBtn" style="margin-top:10px;">＋ BOXを追加する</button>
         <button id="narrGenBtn" style="margin-top:10px;">🗣 ナレーション音声を作る</button>
@@ -354,7 +357,7 @@ const els = {
   exportVideo: $("exportVideo"),
   modeAsrBtn: $("modeAsrBtn"), modeNarrBtn: $("modeNarrBtn"),
   asrPanel: $("asrPanel"), narrPanel: $("narrPanel"),
-  narrVoice: $("narrVoice"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
+  narrVoice: $("narrVoice"), readingDict: $("readingDict"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
   narrGenBtn: $("narrGenBtn"), narrProgress: $("narrProgress"), narrStatus: $("narrStatus"),
 };
 const state = {
@@ -362,7 +365,7 @@ const state = {
   bgMode: "blur", topText: "", topMarks: {}, topColor: "white",
   audioData: null, audioPromise: null, asrWorker: null, asrPhase: "",
   audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
-  mode: "asr", boxes: [], narrVoice: "female", ttsWorker: null,
+  mode: "asr", boxes: [], narrVoice: "female", readingDict: "", ttsWorker: null,
   narrPcm16: null, narrReady: false, tokenizer: null, tokenizerPromise: null,
 };
 const fmt = (s) => {
@@ -989,6 +992,7 @@ function setMode(m) {
 els.modeAsrBtn.addEventListener("click", () => setMode("asr"));
 els.modeNarrBtn.addEventListener("click", () => setMode("narr"));
 els.narrVoice.addEventListener("change", () => { state.narrVoice = els.narrVoice.value; state.narrReady = false; saveState(); });
+els.readingDict.addEventListener("input", () => { state.readingDict = els.readingDict.value; state.narrReady = false; saveState(); });
 
 function fmtBoxTime(s) {
   s = Math.max(0, Math.round(s || 0));
@@ -1508,6 +1512,22 @@ function assembleNarration() {
   });
   return out;
 }
+function applyReadings(text) {
+  const dict = state.readingDict || "";
+  if (!dict.trim()) return text;
+  const pairs = [];
+  dict.split(/\n/).forEach((line) => {
+    const idx = line.search(/[=＝:：]/);
+    if (idx > 0) {
+      const w = line.slice(0, idx).trim(), r = line.slice(idx + 1).trim();
+      if (w && r) pairs.push([w, r]);
+    }
+  });
+  pairs.sort((a, b) => b[0].length - a[0].length);
+  let out = text;
+  pairs.forEach((pr) => { out = out.split(pr[0]).join(pr[1]); });
+  return out;
+}
 async function generateNarration() {
   if (els.boxList) {
     const tas = els.boxList.querySelectorAll("textarea");
@@ -1543,10 +1563,10 @@ async function generateNarration() {
     const baseVoice = voice === "male" ? "male" : "female";
     for (let i = 0; i < targets.length; i++) {
       const b = targets[i];
-      const key = voice + "|" + b.text;
+      const key = voice + "|" + (state.readingDict || "") + "|" + b.text;
       if (!(b.pcm && b.genKey === key)) {
         setStatus(els.narrStatus, "BOX " + (state.boxes.indexOf(b) + 1) + " の音声を作っています…（" + (i + 1) + "／" + targets.length + "）");
-        let pcm = await genTextToPcm(b.text, baseVoice);
+        let pcm = await genTextToPcm(applyReadings(b.text), baseVoice);
         if (voice === "high") pcm = pitchShiftPcm(pcm, HIGH_PITCH);
         b.pcm = pcm;
         b.audioDur = pcm.length / 24000;
@@ -2457,6 +2477,7 @@ function saveState() {
         segments: state.segments.map((s) => ({ start: s.start, end: s.end, text: s.text, range: s.range, marks: s.marks || {} })),
         mode: state.mode || "asr",
         narrVoice: state.narrVoice || "female",
+        readingDict: state.readingDict || "",
         boxes: (state.boxes || []).map((b) => ({ start: b.start, end: b.end, text: b.text || "", marks: b.marks || {} })),
         bgMode: state.bgMode || "blur",
         topText: state.topText || "",
@@ -2487,6 +2508,8 @@ async function restoreSave(withVideo) {
   els.narrPanel.style.display = state.mode === "narr" ? "block" : "none";
   state.narrVoice = d.narrVoice || "female";
   if (els.narrVoice) els.narrVoice.value = state.narrVoice;
+  state.readingDict = d.readingDict || "";
+  if (els.readingDict) els.readingDict.value = state.readingDict;
   state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", marks: b.marks || {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
   state.narrReady = false;
   state.narrPcm16 = null;
