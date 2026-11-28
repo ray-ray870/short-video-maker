@@ -166,7 +166,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v65）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v66）</p>
     </div>
   </div>
 </header>
@@ -271,6 +271,12 @@
           <button type="button" id="subOnBtn" class="sel">字幕あり</button>
           <button type="button" id="subOffBtn">字幕なし（声だけ）</button>
         </div>
+        <span class="fld-label" style="margin-top:12px;">動画の音は？</span>
+        <div class="mode-row">
+          <button type="button" id="mixOffBtn" class="sel">ナレーションのみ</button>
+          <button type="button" id="mixOnBtn">動画の音も使う</button>
+        </div>
+        <p class="hint">「動画の音も使う」にすると、元の動画の音も少し小さめに重なります。</p>
         <div class="seg-list" id="boxList"></div>
         <button type="button" class="secondary" id="addBoxBtn" style="margin-top:10px;">＋ BOXを追加する</button>
         <button id="narrGenBtn" style="margin-top:10px;">🗣 ナレーション音声を作る</button>
@@ -376,7 +382,7 @@ const els = {
   exportVideo: $("exportVideo"),
   modeAsrBtn: $("modeAsrBtn"), modeNarrBtn: $("modeNarrBtn"),
   asrPanel: $("asrPanel"), narrPanel: $("narrPanel"),
-  narrVoice: $("narrVoice"), subOnBtn: $("subOnBtn"), subOffBtn: $("subOffBtn"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
+  narrVoice: $("narrVoice"), subOnBtn: $("subOnBtn"), subOffBtn: $("subOffBtn"), mixOffBtn: $("mixOffBtn"), mixOnBtn: $("mixOnBtn"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
   narrGenBtn: $("narrGenBtn"), narrProgress: $("narrProgress"), narrStatus: $("narrStatus"),
 };
 const state = {
@@ -384,7 +390,7 @@ const state = {
   bgMode: "blur", topText: "", topMarks: {}, topColor: "white",
   audioData: null, audioPromise: null, asrWorker: null, asrPhase: "",
   audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
-  mode: "asr", boxes: [], narrVoice: "female", readingDict: "", narrNoSub: false, ttsWorker: null,
+  mode: "asr", boxes: [], narrVoice: "female", readingDict: "", narrNoSub: false, narrMixOrig: false, ttsWorker: null,
   narrPcm16: null, narrReady: false, tokenizer: null, tokenizerPromise: null,
 };
 const fmt = (s) => {
@@ -1034,6 +1040,9 @@ els.narrVoice.addEventListener("change", () => { state.narrVoice = els.narrVoice
 function updSubBtns() { els.subOnBtn.classList.toggle("sel", !state.narrNoSub); els.subOffBtn.classList.toggle("sel", state.narrNoSub); }
 els.subOnBtn.addEventListener("click", () => { state.narrNoSub = false; updSubBtns(); renderBoxes(); syncNarrationSegments(); saveState(); });
 els.subOffBtn.addEventListener("click", () => { state.narrNoSub = true; updSubBtns(); renderBoxes(); syncNarrationSegments(); saveState(); });
+function updMixBtns() { els.mixOffBtn.classList.toggle("sel", !state.narrMixOrig); els.mixOnBtn.classList.toggle("sel", state.narrMixOrig); }
+els.mixOffBtn.addEventListener("click", () => { state.narrMixOrig = false; updMixBtns(); saveState(); });
+els.mixOnBtn.addEventListener("click", () => { state.narrMixOrig = true; updMixBtns(); saveState(); });
 
 function fmtBoxTime(s) {
   s = Math.max(0, Math.round(s || 0));
@@ -2159,6 +2168,18 @@ function playMediaItem(el, from, to, onFrame) {
 }
 
 /* WebCodecs書き出し。mode="realtime"：再生しながら取り込む（速い）。mode="step"：1コマずつ止めて取り込む（確実） */
+function mixPcm16(a, b) {
+  const n = Math.max(a ? a.length : 0, b ? b.length : 0);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (a && i < a.length) ? a[i] : 0;
+    const y = (b && i < b.length) ? b[i] * 0.7 : 0;
+    let v = x + y;
+    if (v > 1) v = 1; else if (v < -1) v = -1;
+    out[i] = v;
+  }
+  return out;
+}
 async function exportWithWebCodecs(v, items, totalDur, mode) {
   const mod = await import("https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.1/build/mp4-muxer.mjs");
   const Muxer = mod.Muxer, ArrayBufferTarget = mod.ArrayBufferTarget;
@@ -2295,7 +2316,13 @@ async function exportWithWebCodecs(v, items, totalDur, mode) {
       if (it.kind === "range") {
         if (narrPcm) {
           const a = Math.max(0, Math.floor(joinedAcc * 16000)), b = Math.min(narrPcm.length, Math.ceil((joinedAcc + it.dur) * 16000));
-          pieces.push({ data: narrPcm.subarray(a, b), dur: it.dur });
+          const narrSlice = narrPcm.subarray(a, b);
+          if (state.narrMixOrig && state.audioData) {
+            const oa = Math.max(0, Math.floor(it.start * 16000)), ob = Math.min(state.audioData.length, Math.ceil(it.end * 16000));
+            pieces.push({ data: mixPcm16(narrSlice, state.audioData.subarray(oa, ob)), dur: it.dur });
+          } else {
+            pieces.push({ data: narrSlice, dur: it.dur });
+          }
         } else {
           const src = state.audioData;
           if (src) {
@@ -2562,6 +2589,7 @@ function saveState() {
         narrVoice: state.narrVoice || "female",
         readingDict: state.readingDict || "",
         narrNoSub: state.narrNoSub || false,
+        narrMixOrig: state.narrMixOrig || false,
         boxes: (state.boxes || []).map((b) => ({ start: b.start, end: b.end, text: b.text || "", subText: b.subText || "", marks: b.marks || {}, linked: b.linked !== false })),
         bgMode: state.bgMode || "blur",
         topText: state.topText || "",
@@ -2595,6 +2623,8 @@ async function restoreSave(withVideo) {
   state.readingDict = "";
   state.narrNoSub = !!d.narrNoSub;
   updSubBtns();
+  state.narrMixOrig = !!d.narrMixOrig;
+  updMixBtns();
   state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", subText: b.subText || "", marks: b.marks || {}, linked: b.linked !== false, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
   state.narrReady = false;
   state.narrPcm16 = null;
