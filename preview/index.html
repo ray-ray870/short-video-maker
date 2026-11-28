@@ -174,7 +174,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v68）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v69）</p>
     </div>
   </div>
 </header>
@@ -524,6 +524,8 @@ async function loadVideoFile(blob, name) {
   setStatus(els.asrStatus, "音声を準備しています…");
   renderRanges();
   renderSegList();
+  renderBoxes();
+  syncNarrationSegments();
   updateActionButtons();
   // ファイルの読み取り権限が切れる前に、その場で音声を読み込んでおく（Android対策）
   state.audioData = null;
