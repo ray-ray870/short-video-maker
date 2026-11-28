@@ -115,9 +115,12 @@
   .fld-label{ display:block; font-weight:700; margin-bottom:6px; }
   .chip-row{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
   .chip{
+    display:inline-block; width:auto; min-height:40px;
     border:2px solid #c4b2e3; background:#fff; color:var(--ink);
-    border-radius:999px; padding:6px 12px; font-size:15px; cursor:pointer;
+    border-radius:999px; padding:6px 14px; font-size:15px; cursor:pointer;
   }
+  details.adv{ border:1px solid var(--line); border-radius:10px; padding:4px 10px 10px; margin-top:12px; background:#fbf9ff; }
+  details.adv > summary{ font-weight:700; font-size:15px; cursor:pointer; padding:8px 0; list-style-position:inside; }
   .chip.c-blue{ background:#33b5ff; border-color:#1a7fc1; color:#fff; font-weight:700; }
   .chip.c-yellow{ background:#ffd83d; border-color:#e0a800; font-weight:700; }
   .chip.c-red{ background:#ff5252; border-color:#c62828; color:#fff; font-weight:700; }
@@ -155,16 +158,10 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v55）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v56）</p>
 </header>
 
 <div class="wrap">
-  <section class="card" id="installCard">
-    <h2>📲 アプリとして使う</h2>
-    <p class="hint">ホーム画面に追加すると、アプリのようにすぐ開けます（ダウンロード無料）。</p>
-    <button type="button" id="installBtn" style="display:none">アプリをインストール</button>
-    <p class="hint" id="installHint">ボタンが出ないときは、ブラウザのメニュー（⋮）から「アプリをインストール」または「ホーム画面に追加」を選んでください。</p>
-  </section>
   <section class="card" id="restoreBar" style="display:none">
     <h2>💾 前回の作業があります</h2>
     <p class="status" id="restoreInfo"></p>
@@ -259,11 +256,13 @@
           <option value="male">男性の声（明るめ）</option>
           <option value="high">女性の声（高め）</option>
         </select>
+        <details class="adv"><summary>くわしい設定（読み方・字幕）</summary>
         <label for="readingDict" style="margin-top:12px;">📖 読み方の指定（漢字の読みを決められます）</label>
         <textarea id="readingDict" rows="3" placeholder="楓=かえで"></textarea>
         <p class="hint">1行に1つ、「言葉=よみがな」の形で書いてください。字幕には元の言葉のまま出て、読み上げだけが指定の読みになります。人の名前などの漢字に使ってください。言葉ごと（例：ひなたぼっこ中=ひなたぼっこちゅう）でも指定できます。</p>
         <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:600;"><input type="checkbox" id="narrSubToggle" checked style="width:20px;height:20px;"> 字幕も表示する</label>
         <p class="hint">チェックを外すと、読み上げの声だけで、字幕は出ません。</p>
+        </details>
         <div class="seg-list" id="boxList"></div>
         <button type="button" class="secondary" id="addBoxBtn" style="margin-top:10px;">＋ BOXを追加する</button>
         <button id="narrGenBtn" style="margin-top:10px;">🗣 ナレーション音声を作る</button>
@@ -303,6 +302,7 @@
           </div>
           <p class="hint">色付けした言葉は、そちらの色が優先されます。黒を選んだときは白い縁取りになります。</p>
         </div>
+        <details class="adv"><summary>素材を入れる（画像・動画の挿入／素材BOX）</summary>
         <div class="fld">
           <span class="fld-label">画像・動画を挿入（任意）</span>
           <label class="file-btn" for="insertInput">📁 画像・動画を選ぶ</label>
@@ -313,6 +313,7 @@
           <div class="chip-row" id="materialBox"><span class="hint">読み込み中…</span></div>
           <p class="hint">アプリに入っている素材からも選べます。タップすると挿入リストに追加されます。</p>
         </div>
+        </details>
         <button id="exportBtn" disabled>🎥 ショート動画を作る</button>
         <progress id="exportProgress" max="100" value="0"></progress>
         <p class="status" id="exportStatus">選んだ範囲をつなげて1本の縦型動画にします。書き出し中は画面を閉じないでください。</p>
@@ -334,6 +335,12 @@
       </section>
     </div>
   </div>
+  <section class="card" id="installCard">
+    <h2>📲 アプリとして使う</h2>
+    <p class="hint">ホーム画面に追加すると、アプリのようにすぐ開けます（ダウンロード無料）。</p>
+    <button type="button" id="installBtn" style="display:none">アプリをインストール</button>
+    <p class="hint" id="installHint">ボタンが出ないときは、ブラウザのメニュー（⋮）から「アプリをインストール」または「ホーム画面に追加」を選んでください。</p>
+  </section>
 </div>
 
 <video id="exportVideo" class="hidden-video" playsinline preload="auto"></video>
@@ -1143,7 +1150,7 @@ function renderBoxes() {
     foot.appendChild(st);
     if (b.pcm) {
       const play = document.createElement("button");
-      play.type = "button"; play.className = "mini"; play.textContent = "▶️ 試しに聞く";
+      play.type = "button"; play.className = "mini"; play.className = "secondary"; play.textContent = "▶️ 試しに聞く";
       play.addEventListener("click", () => playBoxAudio(b));
       foot.appendChild(play);
     }
