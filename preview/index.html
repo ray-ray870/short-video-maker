@@ -174,7 +174,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v67）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v68）</p>
     </div>
   </div>
 </header>
@@ -296,12 +296,15 @@
       <section class="card s4">
         <h2><span class="step">4</span>ショート動画を作る</h2>
         <div class="fld">
-          <span class="fld-label">背景（横長動画の上下の部分）</span>
+          <span class="fld-label">背景（動画のまわり：横長の上下・縦長の左右）</span>
           <select id="bgSelect">
             <option value="blur" selected>ぼかし（今まで通り）</option>
             <option value="dark">濃いパープル</option>
             <option value="light">薄いパープル</option>
+            <option value="white">白</option>
+            <option value="black">黒</option>
           </select>
+          <p class="hint">動画の形が画面と合わないときにできる帯の色です。縦長動画で左右に帯が出るときも、この色になります。</p>
         </div>
         <div class="fld">
           <span class="fld-label">✏️ 上の文字（任意・入力）</span>
@@ -1993,6 +1996,7 @@ function drawContainSrc(ctx, src, sw, sh, W, H) {
   ctx.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
 }
 const TOP_COLOR_HEX = { white: "#FFFFFF", black: "#1A1A1A", blue: "#33B5FF", yellow: "#FFE600", red: "#FF5252" };
+const BG_FILL = { dark: "#3B2163", light: "#D9C8F5", white: "#FFFFFF", black: "#000000" };
 function drawTopText(ctx, W, H, overMedia) {
   const text = (state.topText || "").replace(/\r/g, "");
   if (!text.trim()) return;
@@ -2094,8 +2098,9 @@ function composeSrc(fctx, W2, H2, bgCtx, bgCanvas, src, seg) {
   const dims = srcDims(src);
   if (!dims[0] || !dims[1]) return;
   const mode = state.bgMode || "blur";
-  if (mode === "dark" || mode === "light") {
-    fctx.fillStyle = mode === "dark" ? "#3B2163" : "#D9C8F5";
+  const bgFill = BG_FILL[mode];
+  if (bgFill) {
+    fctx.fillStyle = bgFill;
     fctx.fillRect(0, 0, W2, H2);
   } else {
     bgCtx.save();
@@ -2487,8 +2492,9 @@ els.exportBtn.addEventListener("click", async () => {
       drawFrame = () => {
         const t = v.currentTime;
         const mode = state.bgMode || "blur";
-        if (mode === "dark" || mode === "light") {
-          fctx.fillStyle = mode === "dark" ? "#3B2163" : "#D9C8F5";
+        const bgFill = BG_FILL[mode];
+        if (bgFill) {
+          fctx.fillStyle = bgFill;
           fctx.fillRect(0, 0, W2, H2);
         } else {
           bgCtx.save();
