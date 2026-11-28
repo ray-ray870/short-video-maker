@@ -166,7 +166,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v62）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v63）</p>
     </div>
   </div>
 </header>
@@ -997,7 +997,7 @@ function setMode(m) {
   els.narrPanel.style.display = m === "narr" ? "block" : "none";
   if (m === "narr") {
     if (!state.boxes.length && state.ranges.length) {
-      state.boxes = [{ start: 0, end: Math.max(1, totalRangeSec()), text: "", marks: {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }];
+      state.boxes = [{ start: 0, end: Math.max(1, totalRangeSec()), text: "", subText: "", marks: {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }];
     }
     renderBoxes();
     syncNarrationSegments();
@@ -1012,8 +1012,8 @@ els.modeAsrBtn.addEventListener("click", () => setMode("asr"));
 els.modeNarrBtn.addEventListener("click", () => setMode("narr"));
 els.narrVoice.addEventListener("change", () => { state.narrVoice = els.narrVoice.value; state.narrReady = false; saveState(); });
 function updSubBtns() { els.subOnBtn.classList.toggle("sel", !state.narrNoSub); els.subOffBtn.classList.toggle("sel", state.narrNoSub); }
-els.subOnBtn.addEventListener("click", () => { state.narrNoSub = false; updSubBtns(); syncNarrationSegments(); saveState(); });
-els.subOffBtn.addEventListener("click", () => { state.narrNoSub = true; updSubBtns(); syncNarrationSegments(); saveState(); });
+els.subOnBtn.addEventListener("click", () => { state.narrNoSub = false; updSubBtns(); renderBoxes(); syncNarrationSegments(); saveState(); });
+els.subOffBtn.addEventListener("click", () => { state.narrNoSub = true; updSubBtns(); renderBoxes(); syncNarrationSegments(); saveState(); });
 
 function fmtBoxTime(s) {
   s = Math.max(0, Math.round(s || 0));
@@ -1031,7 +1031,7 @@ function syncNarrationSegments() {
   if (state.narrNoSub) { state.segments = []; return; }
   const segs = [];
   state.boxes.forEach((b) => {
-    const text = (b.text || "").trim();
+    const text = ((b.subText && b.subText.trim()) ? b.subText : (b.text || "")).trim();
     if (!text) return;
     // 長い文章は字幕の区切り（3〜4行）ごとに分け、BOXの時間に文字数配分で割り当てる
     const parts = splitTextForSubtitle(text);
@@ -1108,7 +1108,7 @@ function renderBoxes() {
     const editBox = document.createElement("div");
     editBox.className = "edit-box";
     const elab = document.createElement("div");
-    elab.className = "edit-label"; elab.textContent = "✏️ 読み上げる文字（そのまま字幕になります）";
+    elab.className = "edit-label"; elab.textContent = "🗣 読み上げる文字";
     const ta = document.createElement("textarea");
     ta.value = b.text || ""; ta.rows = 3;
     ta.placeholder = "例：佐世保市の財政について、やさしくお話しします。";
@@ -1124,8 +1124,30 @@ function renderBoxes() {
     updCnt();
     editBox.appendChild(elab); editBox.appendChild(ta); editBox.appendChild(cnt);
     div.appendChild(editBox);
+    if (!state.narrNoSub) {
+      const subBox = document.createElement("div");
+      subBox.className = "edit-box";
+      const slab = document.createElement("div");
+      slab.className = "edit-label"; slab.textContent = "💬 字幕の文字";
+      const sta = document.createElement("textarea");
+      sta.value = b.subText || ""; sta.rows = 3;
+      sta.placeholder = "空っぽのときは、読み上げる文字がそのまま字幕になります";
+      sta.setAttribute("aria-label", "BOX " + (idx + 1) + " の字幕");
+      const scnt = document.createElement("div");
+      const updSCnt = () => {
+        const n = (sta.value || "").length;
+        scnt.className = "char-count" + (n > 44 ? " over" : "");
+        scnt.textContent = n ? (n + "文字（目安は33〜44文字）") : "空っぽなら読み上げと同じ字幕になります";
+      };
+      sta.addEventListener("input", () => { b.subText = sta.value; updSCnt(); syncNarrationSegments(); saveState(); });
+      sta.addEventListener("change", () => renderBoxes());
+      updSCnt();
+      subBox.appendChild(slab); subBox.appendChild(sta); subBox.appendChild(scnt);
+      div.appendChild(subBox);
+    }
     if (!b.marks || typeof b.marks !== "object") b.marks = {};
-    const chunks = splitChunks(b.text || "");
+    const subSrc = (b.subText && b.subText.trim()) ? b.subText : (b.text || "");
+    const chunks = state.narrNoSub ? [] : splitChunks(subSrc);
     if (chunks.length > 1) {
       const cbox = document.createElement("div");
       cbox.className = "color-box";
@@ -1186,7 +1208,7 @@ els.addBoxBtn.addEventListener("click", () => {
   const start = last ? last.end : 0;
   let end = Math.min(total, start + 10);
   if (end <= start) end = start + 5;
-  state.boxes.push({ start, end, text: "", marks: {}, pcm: null, audioDur: 0, genKey: "", playUrl: null });
+  state.boxes.push({ start, end, text: "", subText: "", marks: {}, pcm: null, audioDur: 0, genKey: "", playUrl: null });
   state.narrReady = false;
   renderBoxes();
 });
@@ -2501,7 +2523,7 @@ function saveState() {
         narrVoice: state.narrVoice || "female",
         readingDict: state.readingDict || "",
         narrNoSub: state.narrNoSub || false,
-        boxes: (state.boxes || []).map((b) => ({ start: b.start, end: b.end, text: b.text || "", marks: b.marks || {} })),
+        boxes: (state.boxes || []).map((b) => ({ start: b.start, end: b.end, text: b.text || "", subText: b.subText || "", marks: b.marks || {} })),
         bgMode: state.bgMode || "blur",
         topText: state.topText || "",
         topColor: state.topColor || "white",
@@ -2534,7 +2556,7 @@ async function restoreSave(withVideo) {
   state.readingDict = "";
   state.narrNoSub = !!d.narrNoSub;
   updSubBtns();
-  state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", marks: b.marks || {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
+  state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", subText: b.subText || "", marks: b.marks || {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
   state.narrReady = false;
   state.narrPcm16 = null;
   state.ranges = (d.ranges || []).filter((r) => r && r.end > r.start);
