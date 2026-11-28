@@ -166,7 +166,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v64）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v65）</p>
     </div>
   </div>
 </header>
@@ -1020,7 +1020,7 @@ function setMode(m) {
     }
     renderBoxes();
     syncNarrationSegments();
-    if (imported) setStatus(els.narrStatus, "文字起こしの結果をBOXに入れました。字幕を直すと、読み上げも一緒に変わります。読み上げだけ変えたいときは、読み上げの欄を直接直してください。");
+    if (imported) setStatus(els.narrStatus, "文字起こしの結果をBOXに入れました。字幕を直すと、読み方も一緒に変わります。読み方だけ変えたいときは、読み方の欄を直接直してください。");
   } else {
     state.segments = [];
     renderSegList();
@@ -1096,6 +1096,7 @@ function renderBoxes() {
   if (!els.boxList) return;
   els.boxList.innerHTML = "";
   state.boxes.forEach((b, idx) => {
+    if (!(b.subText || "").trim() && (b.text || "").trim()) b.subText = b.text;
     const div = document.createElement("div");
     div.className = "seg in-range";
     const head = document.createElement("div");
@@ -1128,7 +1129,7 @@ function renderBoxes() {
     const editBox = document.createElement("div");
     editBox.className = "edit-box";
     const elab = document.createElement("div");
-    elab.className = "edit-label"; elab.textContent = "🗣 読み上げる文字";
+    elab.className = "edit-label"; elab.textContent = "🗣 読み方（音声）";
     const ta = document.createElement("textarea");
     ta.value = b.text || ""; ta.rows = 3;
     ta.placeholder = "例：佐世保市の財政について、やさしくお話しします。";
@@ -1157,7 +1158,7 @@ function renderBoxes() {
       const updSCnt = () => {
         const n = (sta.value || "").length;
         scnt.className = "char-count" + (n > 44 ? " over" : "");
-        scnt.textContent = n ? (n + "文字（目安は33〜44文字）") : "空っぽなら読み上げと同じ字幕になります";
+        scnt.textContent = n ? (n + "文字（目安は33〜44文字）") : "空っぽなら読み方と同じ字幕になります";
       };
       sta.addEventListener("input", () => { b.subText = sta.value; if (b.linked) { b.text = sta.value; ta.value = sta.value; b.genKey = ""; state.narrReady = false; updCnt(); } updSCnt(); syncNarrationSegments(); saveState(); });
       sta.addEventListener("change", () => renderBoxes());
@@ -1169,11 +1170,11 @@ function renderBoxes() {
       if (b.linked) {
         const lt = document.createElement("span");
         lt.className = "char-count";
-        lt.textContent = "🔗 字幕と読み上げは連動中（字幕を直すと読み上げも変わります）";
+        lt.textContent = "🔗 字幕と読み方は連動中（字幕を直すと読み方も変わります）";
         lrow.appendChild(lt);
       } else {
         const lb = document.createElement("button");
-        lb.type = "button"; lb.className = "mini"; lb.textContent = "🔗 読み上げを字幕と同じにする";
+        lb.type = "button"; lb.className = "mini"; lb.textContent = "🔗 読み方を字幕と同じにする";
         lb.addEventListener("click", () => {
           const t = (b.subText && b.subText.trim()) ? b.subText : (b.text || "");
           b.subText = t; b.text = t; b.linked = true; b.genKey = ""; state.narrReady = false;
