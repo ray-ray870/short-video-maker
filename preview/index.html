@@ -166,7 +166,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v63）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v64）</p>
     </div>
   </div>
 </header>
@@ -989,6 +989,24 @@ function renderSegList() {
 }
 
 /* ---------- 3b. ナレーションモード（BOX方式＋端末内TTS） ---------- */
+function importAsrToBoxes() {
+  const segs = (state.segments || []).filter((g) => (g.text || "").trim());
+  if (!segs.length || !state.ranges.length) return false;
+  const pristine = !state.boxes.length || state.boxes.every((b) => !(b.text || "").trim() && !(b.subText || "").trim());
+  if (!pristine) return false;
+  const offs = []; let acc = 0;
+  state.ranges.forEach((r) => { offs.push(acc); acc += (r.end - r.start); });
+  state.boxes = segs.map((g) => {
+    const ri = g.range || 0;
+    const r = state.ranges[ri] || state.ranges[0];
+    const off = offs[ri] || 0;
+    const st = Math.max(0, off + (g.start - r.start));
+    const en = Math.max(st + 0.1, off + (g.end - r.start));
+    return { start: st, end: en, text: g.text, subText: g.text, marks: Object.assign({}, g.marks || {}), linked: true, pcm: null, audioDur: 0, genKey: "", playUrl: null };
+  });
+  state.narrReady = false;
+  return true;
+}
 function setMode(m) {
   state.mode = m;
   els.modeAsrBtn.classList.toggle("sel", m === "asr");
@@ -996,11 +1014,13 @@ function setMode(m) {
   els.asrPanel.style.display = m === "asr" ? "block" : "none";
   els.narrPanel.style.display = m === "narr" ? "block" : "none";
   if (m === "narr") {
+    const imported = importAsrToBoxes();
     if (!state.boxes.length && state.ranges.length) {
-      state.boxes = [{ start: 0, end: Math.max(1, totalRangeSec()), text: "", subText: "", marks: {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }];
+      state.boxes = [{ start: 0, end: Math.max(1, totalRangeSec()), text: "", subText: "", marks: {}, linked: true, pcm: null, audioDur: 0, genKey: "", playUrl: null }];
     }
     renderBoxes();
     syncNarrationSegments();
+    if (imported) setStatus(els.narrStatus, "文字起こしの結果をBOXに入れました。字幕を直すと、読み上げも一緒に変わります。読み上げだけ変えたいときは、読み上げの欄を直接直してください。");
   } else {
     state.segments = [];
     renderSegList();
@@ -1119,7 +1139,7 @@ function renderBoxes() {
       cnt.className = "char-count" + (n > 44 ? " over" : "");
       cnt.textContent = n + "文字（目安は33〜44文字）" + (n > 44 ? "　長いと読み上げが速くなります" : "");
     };
-    ta.addEventListener("input", () => { b.text = ta.value; b.genKey = ""; state.narrReady = false; updCnt(); syncNarrationSegments(); saveState(); });
+    ta.addEventListener("input", () => { b.text = ta.value; b.linked = false; b.genKey = ""; state.narrReady = false; updCnt(); syncNarrationSegments(); saveState(); });
     ta.addEventListener("change", () => renderBoxes());
     updCnt();
     editBox.appendChild(elab); editBox.appendChild(ta); editBox.appendChild(cnt);
@@ -1139,11 +1159,29 @@ function renderBoxes() {
         scnt.className = "char-count" + (n > 44 ? " over" : "");
         scnt.textContent = n ? (n + "文字（目安は33〜44文字）") : "空っぽなら読み上げと同じ字幕になります";
       };
-      sta.addEventListener("input", () => { b.subText = sta.value; updSCnt(); syncNarrationSegments(); saveState(); });
+      sta.addEventListener("input", () => { b.subText = sta.value; if (b.linked) { b.text = sta.value; ta.value = sta.value; b.genKey = ""; state.narrReady = false; updCnt(); } updSCnt(); syncNarrationSegments(); saveState(); });
       sta.addEventListener("change", () => renderBoxes());
       updSCnt();
       subBox.appendChild(slab); subBox.appendChild(sta); subBox.appendChild(scnt);
       div.appendChild(subBox);
+      const lrow = document.createElement("div");
+      lrow.style.cssText = "margin-top:6px;";
+      if (b.linked) {
+        const lt = document.createElement("span");
+        lt.className = "char-count";
+        lt.textContent = "🔗 字幕と読み上げは連動中（字幕を直すと読み上げも変わります）";
+        lrow.appendChild(lt);
+      } else {
+        const lb = document.createElement("button");
+        lb.type = "button"; lb.className = "mini"; lb.textContent = "🔗 読み上げを字幕と同じにする";
+        lb.addEventListener("click", () => {
+          const t = (b.subText && b.subText.trim()) ? b.subText : (b.text || "");
+          b.subText = t; b.text = t; b.linked = true; b.genKey = ""; state.narrReady = false;
+          renderBoxes(); syncNarrationSegments(); saveState();
+        });
+        lrow.appendChild(lb);
+      }
+      div.appendChild(lrow);
     }
     if (!b.marks || typeof b.marks !== "object") b.marks = {};
     const subSrc = (b.subText && b.subText.trim()) ? b.subText : (b.text || "");
@@ -1208,7 +1246,7 @@ els.addBoxBtn.addEventListener("click", () => {
   const start = last ? last.end : 0;
   let end = Math.min(total, start + 10);
   if (end <= start) end = start + 5;
-  state.boxes.push({ start, end, text: "", subText: "", marks: {}, pcm: null, audioDur: 0, genKey: "", playUrl: null });
+  state.boxes.push({ start, end, text: "", subText: "", marks: {}, linked: true, pcm: null, audioDur: 0, genKey: "", playUrl: null });
   state.narrReady = false;
   renderBoxes();
 });
@@ -2523,7 +2561,7 @@ function saveState() {
         narrVoice: state.narrVoice || "female",
         readingDict: state.readingDict || "",
         narrNoSub: state.narrNoSub || false,
-        boxes: (state.boxes || []).map((b) => ({ start: b.start, end: b.end, text: b.text || "", subText: b.subText || "", marks: b.marks || {} })),
+        boxes: (state.boxes || []).map((b) => ({ start: b.start, end: b.end, text: b.text || "", subText: b.subText || "", marks: b.marks || {}, linked: b.linked !== false })),
         bgMode: state.bgMode || "blur",
         topText: state.topText || "",
         topColor: state.topColor || "white",
@@ -2556,7 +2594,7 @@ async function restoreSave(withVideo) {
   state.readingDict = "";
   state.narrNoSub = !!d.narrNoSub;
   updSubBtns();
-  state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", subText: b.subText || "", marks: b.marks || {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
+  state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", subText: b.subText || "", marks: b.marks || {}, linked: b.linked !== false, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
   state.narrReady = false;
   state.narrPcm16 = null;
   state.ranges = (d.ranges || []).filter((r) => r && r.end > r.start);
