@@ -155,7 +155,7 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v49）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v50）</p>
 </header>
 
 <div class="wrap">
@@ -1207,37 +1207,13 @@ function numToKana(raw) {
   }
   return numToKanaInt(s);
 }
-function loadKuromoji() {
-  if (state.tokenizer) return Promise.resolve(state.tokenizer);
-  if (state.tokenizerPromise) return state.tokenizerPromise;
-  state.tokenizerPromise = new Promise((resolve, reject) => {
-    const build = () => {
-      try {
-        window.kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/" }).build((err, tk) => {
-          if (err) reject(new Error("日本語解析の辞書を読み込めませんでした"));
-          else { state.tokenizer = tk; resolve(tk); }
-        });
-      } catch (e) { reject(e); }
-    };
-    if (window.kuromoji) build();
-    else {
-      const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js";
-      s.onload = build;
-      s.onerror = () => reject(new Error("日本語解析の部品を読み込めませんでした"));
-      document.head.appendChild(s);
-    }
-  });
-  return state.tokenizerPromise;
-}
 const TTS_PUNCT = { "。": ".", "、": ",", "！": "!", "?": "?", "？": "?", "!": "!", "「": "“", "」": "”" };
-async function textToPhonemes(text) {
+function workerTextToPhonemes(text) {
   let t = String(text || "").normalize("NFKC");
   t = t.replace(/[〜～~](?=[0-9])/g, "から");
   t = t.replace(/[0-9][0-9,]*(\.[0-9]+)?/g, (m) => " " + numToKana(m) + " ");
   t = t.replace(/%/g, "パーセント");
-  const tk = await loadKuromoji();
-  const tokens = tk.tokenize(t);
+  const tokens = ttsTokenizer.tokenize(t);
   let out = "";
   for (const tok of tokens) {
     const surf = tok.surface_form || "";
@@ -1263,78 +1239,129 @@ let ttsSeq = 0;
 const ttsPending = new Map();
 let ttsInitState = null;
 let ttsDlHandler = null;
+const TTS_WORKER_MAIN = `
+let session = null;
+let packT = null, packK = null;
+let ttsTokenizer = null;
+async function fetchBuf(url, tag) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("download failed: " + tag);
+  const total = Number(res.headers.get("Content-Length") || 0);
+  if (!res.body || !total) { const b = await res.arrayBuffer(); self.postMessage({ type: "dl", tag: tag, pct: 100 }); return b; }
+  const reader = res.body.getReader();
+  const chunks = []; let got = 0;
+  while (true) { const r = await reader.read(); if (r.done) break; chunks.push(r.value); got += r.value.length; self.postMessage({ type: "dl", tag: tag, pct: Math.min(100, Math.round(got / total * 100)) }); }
+  const out = new Uint8Array(got); let off = 0;
+  chunks.forEach((c) => { out.set(c, off); off += c.length; });
+  return out.buffer;
+}
+function kuromojiBuild() {
+  return new Promise((resolve, reject) => {
+    kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/" }).build((err, tk) => {
+      if (err) reject(new Error("日本語辞書の読み込みに失敗しました"));
+      else { ttsTokenizer = tk; resolve(); }
+    });
+  });
+}
+async function runKokoro(phonemes, voice) {
+  const ids = [0];
+  for (const ch of phonemes) { const v = VOCAB[ch]; if (v != null) ids.push(v); }
+  ids.push(0);
+  const n = ids.length;
+  const off = 256 * Math.min(Math.max(n - 2, 0), 509);
+  let style;
+  if (voice === "male") { style = new Float32Array(256); for (let i = 0; i < 256; i++) style[i] = 0.6 * packK[off + i] + 0.4 * packT[off + i]; }
+  else style = packT.slice(off, off + 256);
+  const feeds = {
+    input_ids: new ort.Tensor("int64", BigInt64Array.from(ids.map((x) => BigInt(x))), [1, n]),
+    style: new ort.Tensor("float32", style, [1, 256]),
+    speed: new ort.Tensor("float32", new Float32Array([1.0]), [1]),
+  };
+  const out = await session.run(feeds);
+  return new Float32Array(Object.values(out)[0].data);
+}
+self.onmessage = async (e) => {
+  const d = e.data || {};
+  try {
+    if (d.type === "init") {
+      if (!session) {
+        self.postMessage({ type: "stage", stage: "dict" });
+        if (!ttsTokenizer) await kuromojiBuild();
+        self.postMessage({ type: "stage", stage: "model" });
+        const model = await fetchBuf("https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx", "model");
+        const tb = await fetchBuf("https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/jf_tebukuro.bin", "voice");
+        const kb = await fetchBuf("https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/jm_kumo.bin", "voice");
+        packT = new Float32Array(tb); packK = new Float32Array(kb);
+        self.postMessage({ type: "stage", stage: "session" });
+        session = await ort.InferenceSession.create(model, { executionProviders: ["wasm"] });
+      }
+      self.postMessage({ type: "ready" });
+    } else if (d.type === "gen") {
+      const parts = String(d.text).split(/(?<=[。！？])/).map((t) => t.trim()).filter((t) => t.length);
+      const chunks = [];
+      let cur = "";
+      for (const p of parts) {
+        if ((cur + p).length <= 40) cur += p;
+        else { if (cur) chunks.push(cur); cur = p; }
+      }
+      if (cur) chunks.push(cur);
+      if (!chunks.length) chunks.push(String(d.text));
+      const pcms = [];
+      for (const c of chunks) {
+        const ph = workerTextToPhonemes(c);
+        if (!ph) continue;
+        pcms.push(await runKokoro(ph, d.voice));
+      }
+      const gap = Math.floor(24000 * 0.12);
+      const total = pcms.reduce((a, p) => a + p.length, 0) + gap * Math.max(0, pcms.length - 1);
+      const pcm = new Float32Array(total);
+      let o2 = 0;
+      pcms.forEach((p) => { pcm.set(p, o2); o2 += p.length + gap; });
+      self.postMessage({ type: "pcm", id: d.id, pcm: pcm }, [pcm.buffer]);
+    }
+  } catch (err) {
+    self.postMessage({ type: "error", id: d.id || 0, message: String((err && err.message) || err) });
+  }
+};
+`;
+function buildTtsWorkerCode() {
+  const parts = [];
+  parts.push('importScripts("https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js");');
+  parts.push('importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.wasm.min.js");');
+  parts.push('ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";');
+  parts.push("ort.env.wasm.numThreads = 1;");
+  parts.push("const VOCAB = " + JSON.stringify(KOKORO_VOCAB) + ";");
+  parts.push("const HEPBURN = " + JSON.stringify(HEPBURN) + ";");
+  parts.push("const NUM_H = " + JSON.stringify(NUM_H) + ";");
+  parts.push("const TTS_PUNCT = " + JSON.stringify(TTS_PUNCT) + ";");
+  parts.push("const SUTEGANA = new Set(" + JSON.stringify(Array.from(SUTEGANA)) + ");");
+  [kata2hira, wordPhonemes, numToKanaInt, numToKana, workerTextToPhonemes].forEach((f) => parts.push(f.toString() + ";"));
+  parts.push("const numLenOne = " + numLenOne.toString() + ";");
+  parts.push("const numLenTwo = " + numLenTwo.toString() + ";");
+  parts.push("const numLenThree = " + numLenThree.toString() + ";");
+  parts.push("const numLenFour = " + numLenFour.toString() + ";");
+  parts.push("const numLenX = " + numLenX.toString() + ";");
+  parts.push(TTS_WORKER_MAIN);
+  return parts.join("\n");
+}
 function getTtsWorker() {
   if (state.ttsWorker) return state.ttsWorker;
-  const code = [
-    'import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.wasm.min.mjs";',
-    'ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";',
-    "ort.env.wasm.numThreads = 1;",
-    "const VOCAB = " + JSON.stringify(KOKORO_VOCAB) + ";",
-    "let session = null;",
-    "let packT = null, packK = null;",
-    "async function fetchBuf(url, tag) {",
-    "  const res = await fetch(url);",
-    "  if (!res.ok) throw new Error('download failed: ' + tag);",
-    "  const total = Number(res.headers.get('Content-Length') || 0);",
-    "  if (!res.body || !total) { const b = await res.arrayBuffer(); self.postMessage({ type: 'dl', tag: tag, pct: 100 }); return b; }",
-    "  const reader = res.body.getReader();",
-    "  const chunks = []; let got = 0;",
-    "  while (true) { const r = await reader.read(); if (r.done) break; chunks.push(r.value); got += r.value.length; self.postMessage({ type: 'dl', tag: tag, pct: Math.min(100, Math.round(got / total * 100)) }); }",
-    "  const out = new Uint8Array(got); let off = 0;",
-    "  chunks.forEach((c) => { out.set(c, off); off += c.length; });",
-    "  return out.buffer;",
-    "}",
-    "self.onmessage = async (e) => {",
-    "  const d = e.data || {};",
-    "  try {",
-    "    if (d.type === 'init') {",
-    "      if (!session) {",
-    "        const model = await fetchBuf('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx', 'model');",
-    "        const tb = await fetchBuf('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/jf_tebukuro.bin', 'voice');",
-    "        const kb = await fetchBuf('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/jm_kumo.bin', 'voice');",
-    "        packT = new Float32Array(tb); packK = new Float32Array(kb);",
-    "        session = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });",
-    "      }",
-    "      self.postMessage({ type: 'ready' });",
-    "    } else if (d.type === 'gen') {",
-    "      const ids = [0];",
-    "      for (const ch of d.phonemes) { const v = VOCAB[ch]; if (v != null) ids.push(v); }",
-    "      ids.push(0);",
-    "      const n = ids.length;",
-    "      const off = 256 * Math.min(Math.max(n - 2, 0), 509);",
-    "      let style;",
-    "      if (d.voice === 'male') { style = new Float32Array(256); for (let i = 0; i < 256; i++) style[i] = 0.6 * packK[off + i] + 0.4 * packT[off + i]; }",
-    "      else style = packT.slice(off, off + 256);",
-    "      const feeds = {",
-    "        input_ids: new ort.Tensor('int64', BigInt64Array.from(ids.map((x) => BigInt(x))), [1, n]),",
-    "        style: new ort.Tensor('float32', style, [1, 256]),",
-    "        speed: new ort.Tensor('float32', new Float32Array([1.0]), [1]),",
-    "      };",
-    "      const out = await session.run(feeds);",
-    "      const pcm = new Float32Array(Object.values(out)[0].data);",
-    "      self.postMessage({ type: 'pcm', id: d.id, pcm: pcm }, [pcm.buffer]);",
-    "    }",
-    "  } catch (err) {",
-    "    self.postMessage({ type: 'error', id: d.id || 0, message: String((err && err.message) || err) });",
-    "  }",
-    "};",
-  ].join("\n");
-  const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
-  const w = new Worker(url, { type: "module" });
+  const url = URL.createObjectURL(new Blob([buildTtsWorkerCode()], { type: "text/javascript" }));
+  const w = new Worker(url);
   w.addEventListener("message", (e) => {
     const m = e.data || {};
-    if (m.type === "dl") { if (ttsDlHandler) ttsDlHandler(m); }
-    else if (m.type === "ready") { if (ttsInitState) { const s = ttsInitState; ttsInitState = null; s.resolve(); } }
+    if (m.type === "dl" || m.type === "stage") { if (ttsDlHandler) ttsDlHandler(m); }
+    else if (m.type === "ready") { if (ttsInitState) { const st = ttsInitState; ttsInitState = null; st.resolve(); } }
     else if (m.type === "pcm") {
       const p = ttsPending.get(m.id);
       if (p) { ttsPending.delete(m.id); p.resolve(m.pcm); }
     } else if (m.type === "error") {
       if (m.id && ttsPending.has(m.id)) { const p = ttsPending.get(m.id); ttsPending.delete(m.id); p.reject(new Error(m.message)); }
-      else if (ttsInitState) { const s = ttsInitState; ttsInitState = null; s.reject(new Error(m.message)); }
+      else if (ttsInitState) { const st = ttsInitState; ttsInitState = null; st.reject(new Error(m.message)); }
     }
   });
   w.addEventListener("error", (e) => {
-    if (ttsInitState) { const s = ttsInitState; ttsInitState = null; s.reject(new Error(e.message || "読み上げの仕組みを読み込めませんでした")); }
+    if (ttsInitState) { const st = ttsInitState; ttsInitState = null; st.reject(new Error(e.message || "読み上げの仕組みを読み込めませんでした")); }
   });
   state.ttsWorker = w;
   return w;
@@ -1348,12 +1375,12 @@ function ttsInit(onDl) {
     w.postMessage({ type: "init" });
   });
 }
-function ttsGen(phonemes, voice) {
+function ttsGen(text, voice) {
   const w = getTtsWorker();
   const id = ++ttsSeq;
   return new Promise((resolve, reject) => {
     ttsPending.set(id, { resolve, reject });
-    w.postMessage({ type: "gen", id, phonemes, voice });
+    w.postMessage({ type: "gen", id, text, voice });
   });
 }
 function resamplePcm(src, fromRate, toRate) {
@@ -1380,28 +1407,7 @@ function pitchShiftPcm(src, factor) {
   return out;
 }
 async function genTextToPcm(text, baseVoice) {
-  const parts = String(text).split(/(?<=[。！？])/).map((s) => s.trim()).filter((s) => s.length);
-  const chunks = [];
-  let cur = "";
-  for (const p of parts) {
-    if ((cur + p).length <= 40) cur += p;
-    else { if (cur) chunks.push(cur); cur = p; }
-  }
-  if (cur) chunks.push(cur);
-  if (!chunks.length) chunks.push(String(text));
-  const pcms = [];
-  for (const c of chunks) {
-    const ph = await textToPhonemes(c);
-    if (!ph) continue;
-    pcms.push(await ttsGen(ph, baseVoice));
-  }
-  if (!pcms.length) return new Float32Array(0);
-  const gap = Math.floor(24000 * 0.12);
-  const total = pcms.reduce((a, p) => a + p.length, 0) + gap * (pcms.length - 1);
-  const out = new Float32Array(total);
-  let off = 0;
-  pcms.forEach((p) => { out.set(p, off); off += p.length + gap; });
-  return out;
+  return ttsGen(text, baseVoice);
 }
 function assembleNarration() {
   const total = totalRangeSec();
@@ -1424,6 +1430,10 @@ function assembleNarration() {
   return out;
 }
 async function generateNarration() {
+  if (els.boxList) {
+    const tas = els.boxList.querySelectorAll("textarea");
+    state.boxes.forEach((b, i) => { if (tas[i]) b.text = tas[i].value; });
+  }
   const targets = state.boxes.filter((b) => (b.text || "").trim());
   if (!targets.length) throw new Error("BOXに文字を入れてください");
   if (!state.ranges.length) throw new Error("先に切り抜き範囲を決めてください");
@@ -1432,11 +1442,24 @@ async function generateNarration() {
   els.narrProgress.value = 0;
   try {
     setStatus(els.narrStatus, "読み上げの準備をしています…（初回はモデルのダウンロードがあります）");
-    await ttsInit((m) => {
-      const label = m.tag === "model" ? "読み上げモデルをダウンロード中" : "声データをダウンロード中";
-      els.narrProgress.value = m.pct || 0;
-      setStatus(els.narrStatus, label + " " + Math.round(m.pct || 0) + "%");
-    });
+    let stageLabel = "読み上げの準備をしています";
+    const startedAt = Date.now();
+    const watchdog = setInterval(() => {
+      setStatus(els.narrStatus, stageLabel + "…（" + Math.floor((Date.now() - startedAt) / 1000) + "秒経過）");
+    }, 5000);
+    try {
+      await ttsInit((m) => {
+        if (m.type === "stage") {
+          stageLabel = m.stage === "dict" ? "日本語の辞書を読み込んでいます" : (m.stage === "session" ? "読み上げエンジンを起動しています" : "読み上げの準備をしています");
+          setStatus(els.narrStatus, stageLabel + "…");
+        } else {
+          const label = m.tag === "model" ? "読み上げモデルをダウンロード中" : "声データをダウンロード中";
+          stageLabel = label;
+          els.narrProgress.value = m.pct || 0;
+          setStatus(els.narrStatus, label + " " + Math.round(m.pct || 0) + "%");
+        }
+      });
+    } finally { clearInterval(watchdog); }
     const voice = state.narrVoice || "female";
     const baseVoice = voice === "male" ? "male" : "female";
     for (let i = 0; i < targets.length; i++) {
