@@ -166,7 +166,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v61）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v62）</p>
     </div>
   </div>
 </header>
@@ -266,10 +266,11 @@
           <option value="male">男性の声（明るめ）</option>
           <option value="high">女性の声（高め）</option>
         </select>
-        <details class="adv"><summary>くわしい設定（字幕）</summary>
-        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:600;"><input type="checkbox" id="narrSubToggle" checked style="width:20px;height:20px;"> 字幕も表示する</label>
-        <p class="hint">チェックを外すと、読み上げの声だけで、字幕は出ません。</p>
-        </details>
+        <span class="fld-label" style="margin-top:12px;">字幕をつける？</span>
+        <div class="mode-row">
+          <button type="button" id="subOnBtn" class="sel">字幕あり</button>
+          <button type="button" id="subOffBtn">字幕なし（声だけ）</button>
+        </div>
         <div class="seg-list" id="boxList"></div>
         <button type="button" class="secondary" id="addBoxBtn" style="margin-top:10px;">＋ BOXを追加する</button>
         <button id="narrGenBtn" style="margin-top:10px;">🗣 ナレーション音声を作る</button>
@@ -375,7 +376,7 @@ const els = {
   exportVideo: $("exportVideo"),
   modeAsrBtn: $("modeAsrBtn"), modeNarrBtn: $("modeNarrBtn"),
   asrPanel: $("asrPanel"), narrPanel: $("narrPanel"),
-  narrVoice: $("narrVoice"), readingDict: $("readingDict"), narrSubToggle: $("narrSubToggle"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
+  narrVoice: $("narrVoice"), subOnBtn: $("subOnBtn"), subOffBtn: $("subOffBtn"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
   narrGenBtn: $("narrGenBtn"), narrProgress: $("narrProgress"), narrStatus: $("narrStatus"),
 };
 const state = {
@@ -1010,7 +1011,9 @@ function setMode(m) {
 els.modeAsrBtn.addEventListener("click", () => setMode("asr"));
 els.modeNarrBtn.addEventListener("click", () => setMode("narr"));
 els.narrVoice.addEventListener("change", () => { state.narrVoice = els.narrVoice.value; state.narrReady = false; saveState(); });
-els.narrSubToggle.addEventListener("change", () => { state.narrNoSub = !els.narrSubToggle.checked; syncNarrationSegments(); saveState(); });
+function updSubBtns() { els.subOnBtn.classList.toggle("sel", !state.narrNoSub); els.subOffBtn.classList.toggle("sel", state.narrNoSub); }
+els.subOnBtn.addEventListener("click", () => { state.narrNoSub = false; updSubBtns(); syncNarrationSegments(); saveState(); });
+els.subOffBtn.addEventListener("click", () => { state.narrNoSub = true; updSubBtns(); syncNarrationSegments(); saveState(); });
 
 function fmtBoxTime(s) {
   s = Math.max(0, Math.round(s || 0));
@@ -2530,7 +2533,7 @@ async function restoreSave(withVideo) {
   if (els.narrVoice) els.narrVoice.value = state.narrVoice;
   state.readingDict = "";
   state.narrNoSub = !!d.narrNoSub;
-  if (els.narrSubToggle) els.narrSubToggle.checked = !state.narrNoSub;
+  updSubBtns();
   state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", marks: b.marks || {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
   state.narrReady = false;
   state.narrPcm16 = null;
