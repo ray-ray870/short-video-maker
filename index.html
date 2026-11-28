@@ -138,13 +138,6 @@
     text-decoration:none; padding:12px 16px; margin-top:10px;
   }
   .hidden-video{ position:absolute; left:-9999px; top:0; width:2px; height:2px; opacity:0.01; }
-  .mode-row{ display:flex; gap:8px; margin-bottom:12px; }
-  .mode-row button{ flex:1; background:#efe8fa; color:var(--ink); font-size:16px; }
-  .mode-row button.sel{ background:var(--accent); color:#fff; }
-  .box-times{ display:flex; gap:8px; align-items:center; margin-top:6px; flex-wrap:wrap; }
-  .box-times input{ width:88px; min-height:44px; }
-  .char-count{ font-size:13px; color:var(--sub); }
-  .char-count.over{ color:#b3261e; font-weight:700; }
   @media (min-width: 900px){
     .wrap{ padding:20px 20px 48px; }
     .layout{ display:grid; grid-template-columns:minmax(320px,400px) 1fr; gap:20px; align-items:start; }
@@ -157,7 +150,7 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v48）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（版：v47）</p>
 </header>
 
 <div class="wrap">
@@ -233,12 +226,7 @@
       </section>
 
       <section class="card">
-        <h2><span class="step">3</span>セリフを用意する</h2>
-        <div class="mode-row">
-          <button type="button" id="modeAsrBtn" class="sel">🎙 動画の音声を使う</button>
-          <button type="button" id="modeNarrBtn">🗣 ナレーションで作る</button>
-        </div>
-        <div id="asrPanel">
+        <h2><span class="step">3</span>文字起こし（選んだ範囲だけ）</h2>
         <p class="hint">選んだ範囲の音声だけを文字起こしするので、動画全体よりずっと早く終わります。終わると、範囲の端は字幕の切れ目に合わせて自動で整えます。</p>
         <label for="modelSelect">字幕の精度</label>
         <select id="modelSelect">
@@ -250,21 +238,6 @@
         <p class="status" id="asrStatus">範囲を追加すると押せるようになります。初回は音声認識モデルのダウンロードで数分かかることがあります。</p>
         <p class="hint">文字起こしの結果は、そのままここでタップして直せます（誤字の修正用）。直した内容が書き出しに反映されます。</p>
         <div class="seg-list" id="segList"></div>
-        </div>
-        <div id="narrPanel" style="display:none">
-        <p class="hint">動画の音声は使わず、BOXに入れた文字を人工の声で読み上げて、字幕にもします。時間は、切り抜いた範囲をつないだ動画の流れ（0:00から）で指定します。挿入した画像・動画の間は、ナレーションは止まります。</p>
-        <label for="narrVoice">読み上げる声</label>
-        <select id="narrVoice">
-          <option value="female" selected>女性の声</option>
-          <option value="male">男性の声（明るめ）</option>
-          <option value="child">子どもの声（かわいい）</option>
-        </select>
-        <div class="seg-list" id="boxList"></div>
-        <button type="button" class="secondary" id="addBoxBtn" style="margin-top:10px;">＋ BOXを追加する</button>
-        <button id="narrGenBtn" style="margin-top:10px;">🗣 ナレーション音声を作る</button>
-        <progress id="narrProgress" max="100" value="0"></progress>
-        <p class="status" id="narrStatus">範囲を決めてから、BOXに文字を入れてください。初回は読み上げ用のモデル（約95MB）のダウンロードで数分かかることがあります。Wi-Fi推奨です。</p>
-        </div>
       </section>
 
       <section class="card">
@@ -319,7 +292,6 @@
         <ul class="notes">
           <li>処理は<strong>この端末の中だけ</strong>で行われます。動画が外部のサーバーに送られることはありません。</li>
           <li>初回の文字起こしは、音声認識モデル（精度優先は約250MB／速さ優先は約70MB）のダウンロードで数分かかることがあります。Wi-Fi推奨です。</li>
-          <li>ナレーションで作るときは、読み上げ用のモデル（約95MB）を初回だけダウンロードします。読み上げも、この端末の中で行われます。</li>
           <li>文字起こしは選んだ範囲だけなので、長い動画でも大丈夫です。</li>
           <li>字幕の自動文字起こしには誤字が出ることがあります。文字起こしの結果のところで直してから書き出してください。</li>
           <li>範囲と範囲のつなぎ目では、一瞬だけ映像が止まって見えることがあります。</li>
@@ -351,18 +323,12 @@ const els = {
   restoreBar: $("restoreBar"), restoreInfo: $("restoreInfo"), restoreBtn: $("restoreBtn"), discardSaveBtn: $("discardSaveBtn"),
   installCard: $("installCard"), installBtn: $("installBtn"), installHint: $("installHint"),
   exportVideo: $("exportVideo"),
-  modeAsrBtn: $("modeAsrBtn"), modeNarrBtn: $("modeNarrBtn"),
-  asrPanel: $("asrPanel"), narrPanel: $("narrPanel"),
-  narrVoice: $("narrVoice"), boxList: $("boxList"), addBoxBtn: $("addBoxBtn"),
-  narrGenBtn: $("narrGenBtn"), narrProgress: $("narrProgress"), narrStatus: $("narrStatus"),
 };
 const state = {
   file: null, url: null, ranges: [], segments: [], inserts: [],
   bgMode: "blur", topText: "", topMarks: {}, topColor: "white",
   audioData: null, audioPromise: null, asrWorker: null, asrPhase: "",
   audioCtx: null, mediaSource: null, audioDest: null, resultUrl: null,
-  mode: "asr", boxes: [], narrVoice: "female", ttsWorker: null,
-  narrPcm16: null, narrReady: false, tokenizer: null, tokenizerPromise: null,
 };
 const fmt = (s) => {
   s = Math.max(0, s || 0);
@@ -419,9 +385,6 @@ els.fileInput.addEventListener("change", async () => {
   }
   state.ranges = [];
   state.segments = [];
-  state.boxes = [];
-  state.narrReady = false;
-  state.narrPcm16 = null;
   els.srcVideo.src = state.url;
   els.exportVideo.src = state.url;
   try { els.exportVideo.load(); } catch (e) {}
@@ -500,7 +463,6 @@ function renderRanges() {
   els.rangeTotal.textContent = state.ranges.length
     ? "合計 " + state.ranges.length + " か所・" + totalRangeSec().toFixed(1) + " 秒のショートになります。"
     : "";
-  if (state.mode === "narr") { state.narrReady = false; syncNarrationSegments(); }
   renderInserts();
   saveState();
 }
@@ -898,575 +860,6 @@ function renderSegList() {
   });
   saveState();
 }
-
-/* ---------- 3b. ナレーションモード（BOX方式＋端末内TTS） ---------- */
-function setMode(m) {
-  state.mode = m;
-  els.modeAsrBtn.classList.toggle("sel", m === "asr");
-  els.modeNarrBtn.classList.toggle("sel", m === "narr");
-  els.asrPanel.style.display = m === "asr" ? "block" : "none";
-  els.narrPanel.style.display = m === "narr" ? "block" : "none";
-  if (m === "narr") {
-    if (!state.boxes.length && state.ranges.length) {
-      state.boxes = [{ start: 0, end: Math.max(1, totalRangeSec()), text: "", marks: {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }];
-    }
-    renderBoxes();
-    syncNarrationSegments();
-  } else {
-    state.segments = [];
-    renderSegList();
-  }
-  updateActionButtons();
-  saveState();
-}
-els.modeAsrBtn.addEventListener("click", () => setMode("asr"));
-els.modeNarrBtn.addEventListener("click", () => setMode("narr"));
-els.narrVoice.addEventListener("change", () => { state.narrVoice = els.narrVoice.value; state.narrReady = false; saveState(); });
-
-function fmtBoxTime(s) {
-  s = Math.max(0, Math.round(s || 0));
-  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-}
-function parseBoxTime(str, fallback) {
-  const t = String(str || "").trim();
-  if (/^\d+(\.\d+)?$/.test(t)) return parseFloat(t);
-  const m = t.match(/^(\d+):(\d{1,2}(\.\d+)?)$/);
-  if (m) return parseInt(m[1], 10) * 60 + parseFloat(m[2]);
-  return fallback;
-}
-function syncNarrationSegments() {
-  if (state.mode !== "narr") return;
-  const segs = [];
-  state.boxes.forEach((b) => {
-    const text = (b.text || "").trim();
-    if (!text) return;
-    let acc = 0;
-    state.ranges.forEach((r, i) => {
-      const d = r.end - r.start;
-      const a = Math.max(b.start, acc), e = Math.min(b.end, acc + d);
-      if (e > a) segs.push({ start: r.start + (a - acc), end: r.start + (e - acc), text: b.text, range: i, marks: b.marks || {} });
-      acc += d;
-    });
-  });
-  segs.sort((x, y) => x.start - y.start);
-  state.segments = segs;
-}
-function pcmToWavBlob(pcm, sampleRate) {
-  const n = pcm.length;
-  const buf = new ArrayBuffer(44 + n * 2);
-  const v = new DataView(buf);
-  const ws = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
-  ws(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); ws(8, "WAVE"); ws(12, "fmt ");
-  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
-  v.setUint16(32, 2, true); v.setUint16(34, 16, true); ws(36, "data"); v.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, Math.round(pcm[i] * 32767))), true);
-  return new Blob([buf], { type: "audio/wav" });
-}
-function playBoxAudio(b) {
-  if (!b.pcm) return;
-  if (!b.playUrl) b.playUrl = URL.createObjectURL(pcmToWavBlob(b.pcm, 24000));
-  const a = new Audio(b.playUrl);
-  a.play().catch(() => {});
-}
-function renderBoxes() {
-  if (!els.boxList) return;
-  els.boxList.innerHTML = "";
-  state.boxes.forEach((b, idx) => {
-    const div = document.createElement("div");
-    div.className = "seg in-range";
-    const head = document.createElement("div");
-    head.className = "time";
-    head.textContent = "BOX " + (idx + 1) + "（つないだ動画の時間で指定）";
-    div.appendChild(head);
-    const trow = document.createElement("div");
-    trow.className = "box-times";
-    const mkTime = (key) => {
-      const inp = document.createElement("input");
-      inp.type = "text"; inp.inputMode = "numeric"; inp.value = fmtBoxTime(b[key]);
-      inp.setAttribute("aria-label", "BOX" + (idx + 1) + (key === "start" ? "開始" : "終了"));
-      inp.addEventListener("change", () => {
-        b[key] = Math.max(0, parseBoxTime(inp.value, b[key]));
-        if (b.end <= b.start) b.end = b.start + 1;
-        inp.value = fmtBoxTime(b[key]);
-        state.narrReady = false;
-        syncNarrationSegments();
-        saveState();
-      });
-      return inp;
-    };
-    trow.appendChild(mkTime("start"));
-    const tilde = document.createElement("span"); tilde.textContent = "〜"; trow.appendChild(tilde);
-    trow.appendChild(mkTime("end"));
-    const dur = document.createElement("span");
-    dur.className = "char-count"; dur.textContent = Math.max(0, b.end - b.start).toFixed(0) + "秒間";
-    trow.appendChild(dur);
-    div.appendChild(trow);
-    const editBox = document.createElement("div");
-    editBox.className = "edit-box";
-    const elab = document.createElement("div");
-    elab.className = "edit-label"; elab.textContent = "✏️ 読み上げる文字（そのまま字幕になります）";
-    const ta = document.createElement("textarea");
-    ta.value = b.text || ""; ta.rows = 3;
-    ta.placeholder = "例：佐世保市の財政について、やさしくお話しします。";
-    ta.setAttribute("aria-label", "BOX " + (idx + 1) + " の文字");
-    const cnt = document.createElement("div");
-    const updCnt = () => {
-      const n = (ta.value || "").length;
-      cnt.className = "char-count" + (n > 44 ? " over" : "");
-      cnt.textContent = n + "文字（目安は33〜44文字）" + (n > 44 ? "　長いと読み上げが速くなります" : "");
-    };
-    ta.addEventListener("input", () => { b.text = ta.value; b.genKey = ""; state.narrReady = false; updCnt(); syncNarrationSegments(); saveState(); });
-    ta.addEventListener("change", () => renderBoxes());
-    updCnt();
-    editBox.appendChild(elab); editBox.appendChild(ta); editBox.appendChild(cnt);
-    div.appendChild(editBox);
-    if (!b.marks || typeof b.marks !== "object") b.marks = {};
-    const chunks = splitChunks(b.text || "");
-    if (chunks.length > 1) {
-      const cbox = document.createElement("div");
-      cbox.className = "color-box";
-      const hint = document.createElement("div");
-      hint.className = "color-label";
-      hint.textContent = "🎨 字幕の色付け（タップで色変更：青→黄色→赤→解除）";
-      cbox.appendChild(hint);
-      const row = document.createElement("div");
-      row.className = "chip-row";
-      const cycle = [null, "blue", "yellow", "red"];
-      chunks.forEach((c) => {
-        const cur = b.marks[c] || null;
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "chip" + (cur ? " c-" + cur : "");
-        btn.textContent = c;
-        btn.addEventListener("click", () => {
-          const now = b.marks[c] || null;
-          const next = cycle[(cycle.indexOf(now) + 1) % cycle.length];
-          if (next) b.marks[c] = next; else delete b.marks[c];
-          renderBoxes();
-        });
-        row.appendChild(btn);
-      });
-      cbox.appendChild(row);
-      div.appendChild(cbox);
-    }
-    const foot = document.createElement("div");
-    foot.style.cssText = "display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap";
-    const st = document.createElement("span");
-    st.className = "char-count";
-    if (b.pcm) st.textContent = "音声 " + (b.audioDur || 0).toFixed(1) + "秒" + (b.audioDur > (b.end - b.start) * 1.02 ? "（BOXより長いので、少し速めて入れます）" : "");
-    foot.appendChild(st);
-    if (b.pcm) {
-      const play = document.createElement("button");
-      play.type = "button"; play.className = "mini"; play.textContent = "▶️ 試しに聞く";
-      play.addEventListener("click", () => playBoxAudio(b));
-      foot.appendChild(play);
-    }
-    const del = document.createElement("button");
-    del.type = "button"; del.className = "mini danger"; del.textContent = "削除";
-    del.addEventListener("click", () => {
-      state.boxes.splice(idx, 1);
-      state.narrReady = false;
-      renderBoxes();
-      syncNarrationSegments();
-      saveState();
-    });
-    foot.appendChild(del);
-    div.appendChild(foot);
-    els.boxList.appendChild(div);
-  });
-  saveState();
-}
-els.addBoxBtn.addEventListener("click", () => {
-  const last = state.boxes[state.boxes.length - 1];
-  const total = Math.max(1, totalRangeSec());
-  const start = last ? last.end : 0;
-  let end = Math.min(total, start + 10);
-  if (end <= start) end = start + 5;
-  state.boxes.push({ start, end, text: "", marks: {}, pcm: null, audioDur: 0, genKey: "", playUrl: null });
-  state.narrReady = false;
-  renderBoxes();
-});
-
-/* --- 日本語テキスト→音素（kuromojiで読みを取り、misaki/cutlet方式で音素化） --- */
-const HEPBURN = {"ぁ": "a", "あ": "a", "ぃ": "i", "い": "i", "ぅ": "ɯ", "う": "ɯ", "ぇ": "e", "え": "e", "ぉ": "o", "お": "o", "か": "ka", "が": "ɡa", "き": "kʲi", "ぎ": "ɡʲi", "く": "kɯ", "ぐ": "ɡɯ", "け": "ke", "げ": "ɡe", "こ": "ko", "ご": "ɡo", "さ": "sa", "ざ": "ʣa", "し": "ɕi", "じ": "ʥi", "す": "sɨ", "ず": "zɨ", "せ": "se", "ぜ": "ʣe", "そ": "so", "ぞ": "ʣo", "た": "ta", "だ": "da", "ち": "ʨi", "ぢ": "ʥi", "つ": "ʦɨ", "づ": "zɨ", "て": "te", "で": "de", "と": "to", "ど": "do", "な": "na", "に": "ɲi", "ぬ": "nɯ", "ね": "ne", "の": "no", "は": "ha", "ば": "ba", "ぱ": "pa", "ひ": "çi", "び": "bʲi", "ぴ": "pʲi", "ふ": "ɸɯ", "ぶ": "bɯ", "ぷ": "pɯ", "へ": "he", "べ": "be", "ぺ": "pe", "ほ": "ho", "ぼ": "bo", "ぽ": "po", "ま": "ma", "み": "mʲi", "む": "mɯ", "め": "me", "も": "mo", "ゃ": "ja", "や": "ja", "ゅ": "jɯ", "ゆ": "jɯ", "ょ": "jo", "よ": "jo", "ら": "ɾa", "り": "ɾʲi", "る": "ɾɯ", "れ": "ɾe", "ろ": "ɾo", "ゎ": "βa", "わ": "βa", "ゐ": "i", "ゑ": "e", "を": "o", "ゔ": "vɯ", "ゕ": "ka", "ゖ": "ke", "ヷ": "va", "ヸ": "vʲi", "ヹ": "ve", "ヺ": "vo", "いぇ": "je", "うぃ": "βi", "うぇ": "βe", "うぉ": "βo", "きぇ": "kʲe", "きゃ": "kʲa", "きゅ": "kʲɨ", "きょ": "kʲo", "ぎゃ": "ɡʲa", "ぎゅ": "ɡʲɨ", "ぎょ": "ɡʲo", "くぁ": "kᵝa", "くぃ": "kᵝi", "くぇ": "kᵝe", "くぉ": "kᵝo", "ぐぁ": "ɡᵝa", "ぐぃ": "ɡᵝi", "ぐぇ": "ɡᵝe", "ぐぉ": "ɡᵝo", "しぇ": "ɕe", "しゃ": "ɕa", "しゅ": "ɕɨ", "しょ": "ɕo", "じぇ": "ʥe", "じゃ": "ʥa", "じゅ": "ʥɨ", "じょ": "ʥo", "ちぇ": "ʨe", "ちゃ": "ʨa", "ちゅ": "ʨɨ", "ちょ": "ʨo", "ぢゃ": "ʥa", "ぢゅ": "ʥɨ", "ぢょ": "ʥo", "つぁ": "ʦa", "つぃ": "ʦʲi", "つぇ": "ʦe", "つぉ": "ʦo", "てぃ": "tʲi", "てゅ": "tʲɨ", "でぃ": "dʲi", "でゅ": "dʲɨ", "とぅ": "tɯ", "どぅ": "dɯ", "にぇ": "ɲe", "にゃ": "ɲa", "にゅ": "ɲɨ", "にょ": "ɲo", "ひぇ": "çe", "ひゃ": "ça", "ひゅ": "çɨ", "ひょ": "ço", "びゃ": "bʲa", "びゅ": "bʲɨ", "びょ": "bʲo", "ぴゃ": "pʲa", "ぴゅ": "pʲɨ", "ぴょ": "pʲo", "ふぁ": "ɸa", "ふぃ": "ɸʲi", "ふぇ": "ɸe", "ふぉ": "ɸo", "ふゅ": "ɸʲɨ", "ふょ": "ɸʲo", "みゃ": "mʲa", "みゅ": "mʲɨ", "みょ": "mʲo", "りゃ": "ɾʲa", "りゅ": "ɾʲɨ", "りょ": "ɾʲo", "ゔぁ": "va", "ゔぃ": "vʲi", "ゔぇ": "ve", "ゔぉ": "vo", "ゔゅ": "bʲɨ", "ゔょ": "bʲo"};
-const SUTEGANA = new Set(["ゃ", "ゅ", "ょ", "ぁ", "ぃ", "ぅ", "ぇ", "ぉ"]);
-function kata2hira(s) {
-  return s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
-}
-function wordPhonemes(hira) {
-  let out = "";
-  for (let i = 0; i < hira.length; i++) {
-    const kk = hira[i];
-    const pk = i > 0 ? hira[i - 1] : null;
-    const nk = i < hira.length - 1 ? hira[i + 1] : null;
-    if (pk && HEPBURN[pk + kk]) { out += HEPBURN[pk + kk]; continue; }
-    if (nk && HEPBURN[kk + nk]) continue;
-    if (nk && SUTEGANA.has(nk)) {
-      if (kk === "っ") continue;
-      out += (HEPBURN[kk] || "").slice(0, -1) + (HEPBURN[nk] || "");
-      continue;
-    }
-    if (SUTEGANA.has(kk)) continue;
-    if (kk === "ー") { out += "ː"; continue; }
-    if (kk === "っ") { out += "ʔ"; continue; }
-    if (kk === "ん") {
-      const tnk = nk ? HEPBURN[nk] : null;
-      if (tnk) {
-        if ("mpb".indexOf(tnk[0]) >= 0) { out += "m"; continue; }
-        if ("kɡ".indexOf(tnk[0]) >= 0) { out += "ŋ"; continue; }
-        if (tnk.startsWith("ɲ") || tnk.startsWith("ʨ") || tnk.startsWith("ʥ")) { out += "ɲ"; continue; }
-        if ("ntdɾz".indexOf(tnk[0]) >= 0) { out += "n"; continue; }
-      }
-      out += "ɴ"; continue;
-    }
-    out += HEPBURN[kk] || "";
-  }
-  return out;
-}
-/* 数字→ひらがな読み（misakiのnum2kana方式） */
-const NUM_H = { ".": "てん", "0": "ゼロ", "1": "いち", "2": "に", "3": "さん", "4": "よん", "5": "ご", "6": "ろく", "7": "なな", "8": "はち", "9": "きゅう", "10": "じゅう", "100": "ひゃく", "1000": "せん", "10000": "まん", "100000000": "おく", "300": "さんびゃく", "600": "ろっぴゃく", "800": "はっぴゃく", "3000": "さんぜん", "8000": "はっせん", "01000": "いっせん" };
-function numLenOne(s) { return NUM_H[s] || ""; }
-function numLenTwo(s) {
-  if (s[0] === "0") return numLenOne(s[1]);
-  if (s === "10") return NUM_H["10"];
-  if (s[0] === "1") return NUM_H["10"] + numLenOne(s[1]);
-  if (s[1] === "0") return numLenOne(s[0]) + NUM_H["10"];
-  return numLenOne(s[0]) + NUM_H["10"] + numLenOne(s[1]);
-}
-function numLenThree(s) {
-  let out = "";
-  if (s[0] === "1") out = NUM_H["100"];
-  else if (s[0] === "3") out = NUM_H["300"];
-  else if (s[0] === "6") out = NUM_H["600"];
-  else if (s[0] === "8") out = NUM_H["800"];
-  else out = numLenOne(s[0]) + NUM_H["100"];
-  if (s.slice(1) !== "00") {
-    if (s[1] === "0") out += numLenOne(s[2]);
-    else out += numLenTwo(s.slice(1));
-  }
-  return out;
-}
-function numLenFour(s, standAlone) {
-  if (s === "0000") return "";
-  while (s.length > 1 && s[0] === "0") s = s.slice(1);
-  if (s.length === 1) return numLenOne(s);
-  if (s.length === 2) return numLenTwo(s);
-  if (s.length === 3) return numLenThree(s);
-  let out = "";
-  if (s[0] === "1") out = standAlone ? NUM_H["1000"] : NUM_H["01000"];
-  else if (s[0] === "3") out = NUM_H["3000"];
-  else if (s[0] === "8") out = NUM_H["8000"];
-  else out = numLenOne(s[0]) + NUM_H["1000"];
-  if (s.slice(1) !== "000") {
-    if (s[1] === "0") out += numLenTwo(s.slice(2));
-    else out += numLenThree(s.slice(1));
-  }
-  return out;
-}
-function numLenX(s) {
-  const head = s.slice(0, -4), tail = s.slice(-4);
-  let out = "";
-  if (head.length === 1) out += numLenOne(head) + NUM_H["10000"];
-  else if (head.length === 2) out += numLenTwo(head) + NUM_H["10000"];
-  else if (head.length === 3) out += numLenThree(head) + NUM_H["10000"];
-  else if (head.length === 4) out += numLenFour(head, false) + NUM_H["10000"];
-  else if (head.length === 5) {
-    out += numLenOne(head[0]) + NUM_H["100000000"];
-    const mid = s.slice(1, 5);
-    out += numLenFour(mid, false);
-    if (mid !== "0000") out += NUM_H["10000"];
-  }
-  out += numLenFour(tail, false);
-  return out;
-}
-function numToKanaInt(s) {
-  while (s.length > 1 && s[0] === "0") s = s.slice(1);
-  if (s.length > 9) {
-    let out = "";
-    for (const ch of s) out += numLenOne(ch);
-    return out;
-  }
-  if (s.length === 1) return numLenOne(s);
-  if (s.length === 2) return numLenTwo(s);
-  if (s.length === 3) return numLenThree(s);
-  if (s.length === 4) return numLenFour(s, true);
-  return numLenX(s);
-}
-function numToKana(raw) {
-  const s = String(raw).replace(/,/g, "");
-  const dot = s.indexOf(".");
-  if (dot >= 0) {
-    const a = s.slice(0, dot) || "0";
-    const b = s.slice(dot + 1);
-    let aConv;
-    if (a.length >= 2 && a[a.length - 1] === "0" && a[a.length - 2] !== "0") {
-      aConv = numToKanaInt(a).slice(0, -1) + "っ";
-    } else aConv = numToKanaInt(a);
-    let bConv = "";
-    for (const ch of b) bConv += numLenOne(ch);
-    return aConv + NUM_H["."] + bConv;
-  }
-  return numToKanaInt(s);
-}
-function loadKuromoji() {
-  if (state.tokenizer) return Promise.resolve(state.tokenizer);
-  if (state.tokenizerPromise) return state.tokenizerPromise;
-  state.tokenizerPromise = new Promise((resolve, reject) => {
-    const build = () => {
-      try {
-        window.kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/" }).build((err, tk) => {
-          if (err) reject(new Error("日本語解析の辞書を読み込めませんでした"));
-          else { state.tokenizer = tk; resolve(tk); }
-        });
-      } catch (e) { reject(e); }
-    };
-    if (window.kuromoji) build();
-    else {
-      const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js";
-      s.onload = build;
-      s.onerror = () => reject(new Error("日本語解析の部品を読み込めませんでした"));
-      document.head.appendChild(s);
-    }
-  });
-  return state.tokenizerPromise;
-}
-const TTS_PUNCT = { "。": ".", "、": ",", "！": "!", "?": "?", "？": "?", "!": "!", "「": "“", "」": "”" };
-async function textToPhonemes(text) {
-  let t = String(text || "").normalize("NFKC");
-  t = t.replace(/[〜～~](?=[0-9])/g, "から");
-  t = t.replace(/[0-9][0-9,]*(\.[0-9]+)?/g, (m) => " " + numToKana(m) + " ");
-  t = t.replace(/%/g, "パーセント");
-  const tk = await loadKuromoji();
-  const tokens = tk.tokenize(t);
-  let out = "";
-  for (const tok of tokens) {
-    const surf = tok.surface_form || "";
-    if (!surf.trim()) continue;
-    if (TTS_PUNCT[surf] !== undefined) { out = out.replace(/\s+$/, "") + TTS_PUNCT[surf] + " "; continue; }
-    let pron = tok.pronunciation || tok.reading || "";
-    if (!pron) {
-      if (/^[ぁ-んァ-ヶー]+$/.test(surf)) pron = surf;
-      else if (/^[A-Za-z]+$/.test(surf)) { out += surf + " "; continue; }
-      else continue;
-    }
-    pron = pron.replace(/ヰ/g, "イ").replace(/ヱ/g, "エ").replace(/ヲ/g, "オ");
-    const ph = wordPhonemes(kata2hira(pron));
-    if (ph) out += ph + " ";
-  }
-  return out.trim().replace(/\s+/g, " ");
-}
-
-/* --- Kokoro TTS（Worker内でonnxruntime-web実行） --- */
-const KOKORO_VOCAB = {";": 1, ":": 2, ",": 3, ".": 4, "!": 5, "?": 6, "—": 9, "…": 10, "\"": 11, "(": 12, ")": 13, "“": 14, "”": 15, " ": 16, "ʣ": 18, "ʥ": 19, "ʦ": 20, "ʨ": 21, "ᵝ": 22, "ꭧ": 23, "A": 24, "I": 25, "O": 31, "Q": 33, "S": 35, "T": 36, "W": 39, "Y": 41, "ᵊ": 42, "a": 43, "b": 44, "c": 45, "d": 46, "e": 47, "f": 48, "h": 50, "i": 51, "j": 52, "k": 53, "l": 54, "m": 55, "n": 56, "o": 57, "p": 58, "q": 59, "r": 60, "s": 61, "t": 62, "u": 63, "v": 64, "w": 65, "x": 66, "y": 67, "z": 68, "ɑ": 69, "ɐ": 70, "ɒ": 71, "æ": 72, "β": 75, "ɔ": 76, "ɕ": 77, "ç": 78, "ɖ": 80, "ð": 81, "ʤ": 82, "ə": 83, "ɚ": 85, "ɛ": 86, "ɜ": 87, "ɟ": 90, "ɡ": 92, "ɥ": 99, "ɨ": 101, "ɪ": 102, "ʝ": 103, "ɯ": 110, "ɰ": 111, "ŋ": 112, "ɳ": 113, "ɲ": 114, "ɴ": 115, "ø": 116, "ɸ": 118, "θ": 119, "œ": 120, "ɹ": 123, "ɾ": 125, "ɻ": 126, "ʁ": 128, "ɽ": 129, "ʂ": 130, "ʃ": 131, "ʈ": 132, "ʧ": 133, "ʊ": 135, "ʋ": 136, "ʌ": 138, "ɣ": 139, "ɤ": 140, "χ": 142, "ʎ": 143, "ʒ": 147, "ʔ": 148, "ˈ": 156, "ˌ": 157, "ː": 158, "ʰ": 162, "ʲ": 164, "↓": 169, "→": 171, "↗": 172, "↘": 173, "ᵻ": 177};
-const CHILD_PITCH = 1.28;
-let ttsSeq = 0;
-const ttsPending = new Map();
-let ttsInitState = null;
-let ttsDlHandler = null;
-function getTtsWorker() {
-  if (state.ttsWorker) return state.ttsWorker;
-  const code = [
-    'import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.wasm.min.mjs";',
-    'ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";',
-    "ort.env.wasm.numThreads = 1;",
-    "const VOCAB = " + JSON.stringify(KOKORO_VOCAB) + ";",
-    "let session = null;",
-    "let packT = null, packK = null;",
-    "async function fetchBuf(url, tag) {",
-    "  const res = await fetch(url);",
-    "  if (!res.ok) throw new Error('download failed: ' + tag);",
-    "  const total = Number(res.headers.get('Content-Length') || 0);",
-    "  if (!res.body || !total) { const b = await res.arrayBuffer(); self.postMessage({ type: 'dl', tag: tag, pct: 100 }); return b; }",
-    "  const reader = res.body.getReader();",
-    "  const chunks = []; let got = 0;",
-    "  while (true) { const r = await reader.read(); if (r.done) break; chunks.push(r.value); got += r.value.length; self.postMessage({ type: 'dl', tag: tag, pct: Math.min(100, Math.round(got / total * 100)) }); }",
-    "  const out = new Uint8Array(got); let off = 0;",
-    "  chunks.forEach((c) => { out.set(c, off); off += c.length; });",
-    "  return out.buffer;",
-    "}",
-    "self.onmessage = async (e) => {",
-    "  const d = e.data || {};",
-    "  try {",
-    "    if (d.type === 'init') {",
-    "      if (!session) {",
-    "        const model = await fetchBuf('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx', 'model');",
-    "        const tb = await fetchBuf('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/jf_tebukuro.bin', 'voice');",
-    "        const kb = await fetchBuf('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/jm_kumo.bin', 'voice');",
-    "        packT = new Float32Array(tb); packK = new Float32Array(kb);",
-    "        session = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });",
-    "      }",
-    "      self.postMessage({ type: 'ready' });",
-    "    } else if (d.type === 'gen') {",
-    "      const ids = [0];",
-    "      for (const ch of d.phonemes) { const v = VOCAB[ch]; if (v != null) ids.push(v); }",
-    "      ids.push(0);",
-    "      const n = ids.length;",
-    "      const off = 256 * Math.min(Math.max(n - 2, 0), 509);",
-    "      let style;",
-    "      if (d.voice === 'male') { style = new Float32Array(256); for (let i = 0; i < 256; i++) style[i] = 0.6 * packK[off + i] + 0.4 * packT[off + i]; }",
-    "      else style = packT.slice(off, off + 256);",
-    "      const feeds = {",
-    "        input_ids: new ort.Tensor('int64', BigInt64Array.from(ids.map((x) => BigInt(x))), [1, n]),",
-    "        style: new ort.Tensor('float32', style, [1, 256]),",
-    "        speed: new ort.Tensor('float32', new Float32Array([1.0]), [1]),",
-    "      };",
-    "      const out = await session.run(feeds);",
-    "      const pcm = new Float32Array(Object.values(out)[0].data);",
-    "      self.postMessage({ type: 'pcm', id: d.id, pcm: pcm }, [pcm.buffer]);",
-    "    }",
-    "  } catch (err) {",
-    "    self.postMessage({ type: 'error', id: d.id || 0, message: String((err && err.message) || err) });",
-    "  }",
-    "};",
-  ].join("\n");
-  const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
-  const w = new Worker(url, { type: "module" });
-  w.addEventListener("message", (e) => {
-    const m = e.data || {};
-    if (m.type === "dl") { if (ttsDlHandler) ttsDlHandler(m); }
-    else if (m.type === "ready") { if (ttsInitState) { const s = ttsInitState; ttsInitState = null; s.resolve(); } }
-    else if (m.type === "pcm") {
-      const p = ttsPending.get(m.id);
-      if (p) { ttsPending.delete(m.id); p.resolve(m.pcm); }
-    } else if (m.type === "error") {
-      if (m.id && ttsPending.has(m.id)) { const p = ttsPending.get(m.id); ttsPending.delete(m.id); p.reject(new Error(m.message)); }
-      else if (ttsInitState) { const s = ttsInitState; ttsInitState = null; s.reject(new Error(m.message)); }
-    }
-  });
-  w.addEventListener("error", (e) => {
-    if (ttsInitState) { const s = ttsInitState; ttsInitState = null; s.reject(new Error(e.message || "読み上げの仕組みを読み込めませんでした")); }
-  });
-  state.ttsWorker = w;
-  return w;
-}
-function ttsInit(onDl) {
-  const w = getTtsWorker();
-  if (state.ttsReady) return Promise.resolve();
-  ttsDlHandler = onDl;
-  return new Promise((resolve, reject) => {
-    ttsInitState = { resolve: () => { state.ttsReady = true; resolve(); }, reject };
-    w.postMessage({ type: "init" });
-  });
-}
-function ttsGen(phonemes, voice) {
-  const w = getTtsWorker();
-  const id = ++ttsSeq;
-  return new Promise((resolve, reject) => {
-    ttsPending.set(id, { resolve, reject });
-    w.postMessage({ type: "gen", id, phonemes, voice });
-  });
-}
-function resamplePcm(src, fromRate, toRate) {
-  if (fromRate === toRate || !src.length) return src;
-  const n = Math.max(1, Math.round(src.length * toRate / fromRate));
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const pos = i * fromRate / toRate;
-    const i0 = Math.floor(pos);
-    const i1 = Math.min(i0 + 1, src.length - 1);
-    out[i] = src[i0] + (src[i1] - src[i0]) * (pos - i0);
-  }
-  return out;
-}
-function pitchShiftPcm(src, factor) {
-  const n = Math.max(1, Math.floor(src.length / factor));
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const pos = i * factor;
-    const i0 = Math.floor(pos);
-    const i1 = Math.min(i0 + 1, src.length - 1);
-    out[i] = src[i0] + (src[i1] - src[i0]) * (pos - i0);
-  }
-  return out;
-}
-async function genTextToPcm(text, baseVoice) {
-  const parts = String(text).split(/(?<=[。！？])/).map((s) => s.trim()).filter((s) => s.length);
-  const chunks = [];
-  let cur = "";
-  for (const p of parts) {
-    if ((cur + p).length <= 40) cur += p;
-    else { if (cur) chunks.push(cur); cur = p; }
-  }
-  if (cur) chunks.push(cur);
-  if (!chunks.length) chunks.push(String(text));
-  const pcms = [];
-  for (const c of chunks) {
-    const ph = await textToPhonemes(c);
-    if (!ph) continue;
-    pcms.push(await ttsGen(ph, baseVoice));
-  }
-  if (!pcms.length) return new Float32Array(0);
-  const gap = Math.floor(24000 * 0.12);
-  const total = pcms.reduce((a, p) => a + p.length, 0) + gap * (pcms.length - 1);
-  const out = new Float32Array(total);
-  let off = 0;
-  pcms.forEach((p) => { out.set(p, off); off += p.length + gap; });
-  return out;
-}
-function assembleNarration() {
-  const total = totalRangeSec();
-  const out = new Float32Array(Math.max(1, Math.ceil(total * 16000)));
-  const sorted = state.boxes.slice().sort((a, b) => a.start - b.start);
-  sorted.forEach((b, bi) => {
-    if (!b.pcm || !b.pcm.length) return;
-    let src = resamplePcm(b.pcm, 24000, 16000);
-    const boxLen = Math.max(1, Math.round((b.end - b.start) * 16000));
-    if (src.length > boxLen) {
-      const fit = Math.min(1.25, src.length / boxLen);
-      if (fit > 1.01) src = resamplePcm(src, 16000, Math.round(16000 * fit));
-    }
-    const startAt = Math.round(b.start * 16000);
-    const nextStart = bi + 1 < sorted.length ? Math.round(sorted[bi + 1].start * 16000) : out.length;
-    const limit = Math.min(out.length, Math.max(startAt, nextStart));
-    const n = Math.min(src.length, limit - startAt);
-    for (let i = 0; i < n; i++) out[startAt + i] = src[i];
-  });
-  return out;
-}
-async function generateNarration() {
-  const targets = state.boxes.filter((b) => (b.text || "").trim());
-  if (!targets.length) throw new Error("BOXに文字を入れてください");
-  if (!state.ranges.length) throw new Error("先に切り抜き範囲を決めてください");
-  els.narrGenBtn.disabled = true;
-  els.narrProgress.style.display = "block";
-  els.narrProgress.value = 0;
-  try {
-    setStatus(els.narrStatus, "読み上げの準備をしています…（初回はモデルのダウンロードがあります）");
-    await ttsInit((m) => {
-      const label = m.tag === "model" ? "読み上げモデルをダウンロード中" : "声データをダウンロード中";
-      els.narrProgress.value = m.pct || 0;
-      setStatus(els.narrStatus, label + " " + Math.round(m.pct || 0) + "%");
-    });
-    const voice = state.narrVoice || "female";
-    const baseVoice = voice === "male" ? "male" : "female";
-    for (let i = 0; i < targets.length; i++) {
-      const b = targets[i];
-      const key = voice + "|" + b.text;
-      if (!(b.pcm && b.genKey === key)) {
-        setStatus(els.narrStatus, "BOX " + (state.boxes.indexOf(b) + 1) + " の音声を作っています…（" + (i + 1) + "／" + targets.length + "）");
-        let pcm = await genTextToPcm(b.text, baseVoice);
-        if (voice === "child") pcm = pitchShiftPcm(pcm, CHILD_PITCH);
-        b.pcm = pcm;
-        b.audioDur = pcm.length / 24000;
-        b.genKey = key;
-        if (b.playUrl) { try { URL.revokeObjectURL(b.playUrl); } catch (e) {} b.playUrl = null; }
-      }
-      els.narrProgress.value = Math.round(((i + 1) / targets.length) * 100);
-    }
-    state.narrPcm16 = assembleNarration();
-    state.narrReady = true;
-    renderBoxes();
-    setStatus(els.narrStatus, "ナレーション音声ができました。「▶️ 試しに聞く」で確認できます。そのままステップ4で書き出してください。", "ok");
-  } finally {
-    els.narrProgress.style.display = "none";
-    els.narrGenBtn.disabled = false;
-  }
-}
-els.narrGenBtn.addEventListener("click", () => {
-  generateNarration().catch((e) => setStatus(els.narrStatus, "エラー：" + (e && e.message ? e.message : e), "warn"));
-});
 
 /* ---------- 5. 書き出し（Canvas + MediaRecorder、複数範囲をつなぐ） ---------- */
 const HL_CODES = { blue: 1, yellow: 2, red: 3 };
@@ -2085,21 +1478,13 @@ async function exportWithWebCodecs(v, items, totalDur, mode) {
   if (encErr) throw encErr;
   if (audioEncoder) {
     const pieces = [];
-    let joinedAcc = 0;
-    const narrPcm = (state.mode === "narr" && state.narrPcm16) ? state.narrPcm16 : null;
     items.forEach((it) => {
       if (it.kind === "range") {
-        if (narrPcm) {
-          const a = Math.max(0, Math.floor(joinedAcc * 16000)), b = Math.min(narrPcm.length, Math.ceil((joinedAcc + it.dur) * 16000));
-          pieces.push({ data: narrPcm.subarray(a, b), dur: it.dur });
-        } else {
-          const src = state.audioData;
-          if (src) {
-            const a = Math.max(0, Math.floor(it.start * 16000)), b = Math.min(src.length, Math.ceil(it.end * 16000));
-            pieces.push({ data: src.subarray(a, b), dur: it.dur });
-          } else pieces.push({ data: null, dur: it.dur });
-        }
-        joinedAcc += it.dur;
+        const src = state.audioData;
+        if (src) {
+          const a = Math.max(0, Math.floor(it.start * 16000)), b = Math.min(src.length, Math.ceil(it.end * 16000));
+          pieces.push({ data: src.subarray(a, b), dur: it.dur });
+        } else pieces.push({ data: null, dur: it.dur });
       } else if (it.kind === "video") {
         const src = it.ins.audioData;
         if (src) {
@@ -2149,17 +1534,6 @@ async function exportWithWebCodecs(v, items, totalDur, mode) {
 
 els.exportBtn.addEventListener("click", async () => {
   if (!state.url || !state.ranges.length) { setStatus(els.exportStatus, "先に動画と切り抜き範囲を指定してください。", "warn"); return; }
-  if (state.mode === "narr" && !state.narrReady) {
-    els.exportBtn.disabled = true;
-    try {
-      setStatus(els.exportStatus, "まず、ナレーション音声を作ります…");
-      await generateNarration();
-    } catch (e) {
-      setStatus(els.exportStatus, "ナレーション音声を作れませんでした：" + (e && e.message ? e.message : e), "warn");
-      updateActionButtons();
-      return;
-    } finally { els.exportBtn.disabled = false; }
-  }
   const ranges = state.ranges.map((r) => ({ start: r.start, end: r.end })).sort((a, b) => a.start - b.start);
   const rangeDur = ranges.reduce((a, r) => a + (r.end - r.start), 0);
   const items = buildTimeline(ranges);
@@ -2221,10 +1595,6 @@ els.exportBtn.addEventListener("click", async () => {
       }
     }
     let drawFrame = null;
-    if (!wcBlob && state.mode === "narr") {
-      // ナレーションモードは予備方式（元の音声を録る方式）では作れないので、ここで止める
-      throw new Error("ナレーションの書き出しに失敗しました。画面を開いたまま、もう一度お試しください");
-    }
     if (!wcBlob) {
     // 従来の録画方式では、動画の音声をそのまま録るため消音を解除する
     if (v.muted) { v.muted = false; restoreMute = true; }
@@ -2348,15 +1718,12 @@ function saveState() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      if (!state.ranges.length && !state.segments.length && !(state.topText || "").trim() && !(state.boxes || []).some((b) => (b.text || "").trim())) return;
+      if (!state.ranges.length && !state.segments.length && !(state.topText || "").trim()) return;
       const data = {
         savedAt: new Date().toISOString(),
         fileName: state.file ? state.file.name : "",
         ranges: state.ranges,
         segments: state.segments.map((s) => ({ start: s.start, end: s.end, text: s.text, range: s.range, marks: s.marks || {} })),
-        mode: state.mode || "asr",
-        narrVoice: state.narrVoice || "female",
-        boxes: (state.boxes || []).map((b) => ({ start: b.start, end: b.end, text: b.text || "", marks: b.marks || {} })),
         bgMode: state.bgMode || "blur",
         topText: state.topText || "",
         topColor: state.topColor || "white",
@@ -2379,16 +1746,6 @@ function loadSave() {
 async function restoreSave() {
   const d = loadSave();
   if (!d) return;
-  state.mode = d.mode === "narr" ? "narr" : "asr";
-  els.modeAsrBtn.classList.toggle("sel", state.mode === "asr");
-  els.modeNarrBtn.classList.toggle("sel", state.mode === "narr");
-  els.asrPanel.style.display = state.mode === "asr" ? "block" : "none";
-  els.narrPanel.style.display = state.mode === "narr" ? "block" : "none";
-  state.narrVoice = d.narrVoice || "female";
-  if (els.narrVoice) els.narrVoice.value = state.narrVoice;
-  state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", marks: b.marks || {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
-  state.narrReady = false;
-  state.narrPcm16 = null;
   state.ranges = (d.ranges || []).filter((r) => r && r.end > r.start);
   state.segments = (d.segments || []).map((s) => ({ start: s.start, end: s.end, text: s.text || "", range: s.range || 0, marks: s.marks || {} }));
   state.bgMode = d.bgMode || "blur";
@@ -2407,7 +1764,6 @@ async function restoreSave() {
   }
   renderRanges();
   renderSegList();
-  if (state.mode === "narr") { renderBoxes(); syncNarrationSegments(); }
   renderTopChips();
   renderInserts();
   updateActionButtons();

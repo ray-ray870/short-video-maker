@@ -1,7 +1,7 @@
 /* みっちーClip工房 Service Worker
    アプリ本体（HTML・マニフェスト・アイコン）をキャッシュして、インストール後すぐ開けるようにする。
    ページ本体はネットワーク優先（更新が届くように）。 */
-const CACHE = "svm-v48";
+const CACHE = "svm-v42";
 const ASSETS = [
   "./",
   "./index.html",
