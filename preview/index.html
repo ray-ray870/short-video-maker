@@ -125,7 +125,7 @@
     border-radius:999px; padding:6px 14px; font-size:15px; cursor:pointer;
   }
   details.adv{ border:1px solid var(--line); border-radius:10px; padding:4px 10px 10px; margin-top:12px; background:#fbf9ff; }
-  details.adv > summary{ font-weight:700; font-size:15px; cursor:pointer; padding:8px 0; list-style-position:inside; }
+  details.adv > summary{ font-weight:700; font-size:15px; cursor:pointer; padding:10px 12px; list-style-position:inside; background:#f1eafc; color:var(--accent); border-radius:8px; }
   .chip.c-blue{ background:#33b5ff; border-color:#1a7fc1; color:#fff; font-weight:700; }
   .chip.c-yellow{ background:#ffd83d; border-color:#e0a800; font-weight:700; }
   .chip.c-red{ background:#ff5252; border-color:#c62828; color:#fff; font-weight:700; }
@@ -166,7 +166,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v57）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v58）</p>
     </div>
   </div>
 </header>
@@ -319,9 +319,11 @@
           <input type="file" id="insertInput" accept="image/*,video/*" multiple>
           <div class="seg-list" id="insertList"></div>
           <p class="hint">最初・切り抜きの間・最後に、好きな画像や動画を入れられます。画像は表示する秒数を指定できます（初期値3秒）。動画はそのままの長さで入ります。</p>
-          <span class="fld-label">素材BOX</span>
-          <div class="chip-row" id="materialBox"><span class="hint">読み込み中…</span></div>
-          <p class="hint">アプリに入っている素材からも選べます。タップすると挿入リストに追加されます。</p>
+          <details class="adv" id="materialDetails">
+            <summary>素材BOX</summary>
+            <div class="chip-row" id="materialBox"><span class="hint">読み込み中…</span></div>
+            <p class="hint">タップすると挿入リストに追加されます。</p>
+          </details>
         </div>
         </details>
         <button id="exportBtn" disabled>🎥 ショート動画を作る</button>
