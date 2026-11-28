@@ -166,7 +166,7 @@
     <img class="brand-icon" src="../アイコン192.png" alt="みっちー">
     <div>
       <h1>みっちーClip工房</h1>
-      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v60）</p>
+      <p>使いたい場面を切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v61）</p>
     </div>
   </div>
 </header>
@@ -266,10 +266,7 @@
           <option value="male">男性の声（明るめ）</option>
           <option value="high">女性の声（高め）</option>
         </select>
-        <details class="adv"><summary>くわしい設定（読み方・字幕）</summary>
-        <label for="readingDict" style="margin-top:12px;">📖 読み方の指定（漢字の読みを決められます）</label>
-        <textarea id="readingDict" rows="3" placeholder="楓=かえで"></textarea>
-        <p class="hint">1行に1つ、「言葉=よみがな」の形で書いてください。字幕には元の言葉のまま出て、読み上げだけが指定の読みになります。人の名前などの漢字に使ってください。言葉ごと（例：ひなたぼっこ中=ひなたぼっこちゅう）でも指定できます。</p>
+        <details class="adv"><summary>くわしい設定（字幕）</summary>
         <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:600;"><input type="checkbox" id="narrSubToggle" checked style="width:20px;height:20px;"> 字幕も表示する</label>
         <p class="hint">チェックを外すと、読み上げの声だけで、字幕は出ません。</p>
         </details>
@@ -1013,7 +1010,6 @@ function setMode(m) {
 els.modeAsrBtn.addEventListener("click", () => setMode("asr"));
 els.modeNarrBtn.addEventListener("click", () => setMode("narr"));
 els.narrVoice.addEventListener("change", () => { state.narrVoice = els.narrVoice.value; state.narrReady = false; saveState(); });
-els.readingDict.addEventListener("input", () => { state.readingDict = els.readingDict.value; state.narrReady = false; saveState(); });
 els.narrSubToggle.addEventListener("change", () => { state.narrNoSub = !els.narrSubToggle.checked; syncNarrationSegments(); saveState(); });
 
 function fmtBoxTime(s) {
@@ -2532,8 +2528,7 @@ async function restoreSave(withVideo) {
   els.narrPanel.style.display = state.mode === "narr" ? "block" : "none";
   state.narrVoice = d.narrVoice || "female";
   if (els.narrVoice) els.narrVoice.value = state.narrVoice;
-  state.readingDict = d.readingDict || "";
-  if (els.readingDict) els.readingDict.value = state.readingDict;
+  state.readingDict = "";
   state.narrNoSub = !!d.narrNoSub;
   if (els.narrSubToggle) els.narrSubToggle.checked = !state.narrNoSub;
   state.boxes = (d.boxes || []).map((b) => ({ start: b.start || 0, end: b.end || 0, text: b.text || "", marks: b.marks || {}, pcm: null, audioDur: 0, genKey: "", playUrl: null }));
