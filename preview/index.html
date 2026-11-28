@@ -155,7 +155,7 @@
 <body>
 <header>
   <h1>🎬 みっちーClip工房（試作品）</h1>
-  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v50）</p>
+  <p>使いたい場面をいくつか切り抜いて、つなげて1本に。字幕つき縦型ショートを自動で作ります。（プレビュー版 v51）</p>
 </header>
 
 <div class="wrap">
@@ -1952,6 +1952,7 @@ function playMediaItem(el, from, to, onFrame) {
     const wd = setInterval(() => {
       if (done) return;
       const nowMs = performance.now();
+      if (el.ended || el.currentTime >= to - 0.02) { finish(null); return; }
       if (frameCount === 0 && nowMs - startAt > 6000) { finish(new Error("playback never started")); return; }
       if (el.paused) {
         if (frameCount > 0 && nowMs - lastAdvanceAt > 3000) { playWithRetry(el); lastAdvanceAt = nowMs; }
@@ -1966,7 +1967,7 @@ function playMediaItem(el, from, to, onFrame) {
       const mt = meta.mediaTime;
       frameCount++;
       if (mt >= from - 0.05 && mt < to) onFrame(mt);
-      if (mt >= to - 0.02 || el.ended) { finish(null); return; }
+      if (mt >= to - 0.06 || el.ended) { finish(null); return; }
       if (!done) el.requestVideoFrameCallback(cb);
     };
     seekTo(el, from)
